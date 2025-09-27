@@ -1,36 +1,55 @@
-'use client'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-import { useCategoryStore } from '@/src/store/products';
-import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
-
-export default function Page() {
-  const categories = useCategoryStore((s) => s.categories);
+export default function HomePage() {
   return (
-    <main className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold">Categories</h1>
-      <div className="overflow-x-auto">
-        <Table className="min-w-[800px]">
-          <THead>
-            <TR>
-              <TH>Category ID</TH>
-              <TH>Category Name</TH>
-              <TH>Description</TH>
-              <TH>Created Date</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {categories.map((category) => (
-              <TR key={category.category_id}>
-                <TD>{category.category_id}</TD>
-                <TD>{category.category_name}</TD>
-                <TD>{category.description}</TD>
-                <TD>{category.created_date}</TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
+    <div className="p-8 space-y-8">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold mb-6">ยินดีต้อนรับสู่ KiddyCare</h1>
+        <p className="text-lg text-muted-foreground mb-12">ระบบจัดการสินค้าเด็กที่ครบครัน</p>
       </div>
-    </main>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-lg">ประเภทสินค้า</CardTitle>
+            <CardDescription>จัดการหมวดหมู่สินค้าและการจัดระเบียบ</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">4</div>
+          </CardContent>
+        </Card>
+        
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-lg">รายการสั่งซื้อ</CardTitle>
+            <CardDescription>ติดตามและจัดการคำสั่งซื้อของลูกค้า</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">0</div>
+          </CardContent>
+        </Card>
+        
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-lg">สินค้าทั้งหมด</CardTitle>
+            <CardDescription>จัดการแคตตาล็อกสินค้าของคุณ</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">0</div>
+          </CardContent>
+        </Card>
+        
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-lg">คลังสินค้า</CardTitle>
+            <CardDescription>ตรวจสอบระดับสต็อกและความพร้อมใช้งาน</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">0</div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
 
