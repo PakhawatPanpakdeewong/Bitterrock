@@ -520,6 +520,9 @@ video {
 .min-w-\[720px\] {
   min-width: 720px;
 }
+.min-w-\[800px\] {
+  min-width: 800px;
+}
 .caption-bottom {
   caption-side: bottom;
 }
@@ -541,11 +544,11 @@ video {
   --tw-bg-opacity: 1;
   background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
 }
-.p-6 {
-  padding: 1.5rem;
-}
 .p-4 {
   padding: 1rem;
+}
+.p-6 {
+  padding: 1.5rem;
 }
 .px-4 {
   padding-left: 1rem;
@@ -565,11 +568,11 @@ video {
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
-.font-semibold {
-  font-weight: 600;
-}
 .font-medium {
   font-weight: 500;
+}
+.font-semibold {
+  font-weight: 600;
 }
 .text-gray-900 {
   --tw-text-opacity: 1;
