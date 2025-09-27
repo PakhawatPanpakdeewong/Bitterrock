@@ -21,3 +21,4 @@ const initialProducts: Product[] = [
 export const useProductStore = create<ProductState>(() => ({ products: initialProducts }));
 
 
+
