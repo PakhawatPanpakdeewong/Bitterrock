@@ -42,7 +42,7 @@ export default function CategoriesPage() {
       setLoading(true);
       setError(null);
       
-      const response = await fetch('http://localhost:3001/api/categories');
+      const response = await fetch('/api/categories');
       const data: ApiResponse = await response.json();
       
       if (data.success) {

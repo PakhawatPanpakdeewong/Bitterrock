@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
 // Load environment variables
-dotenv.config({ path: '../environment/.env.local' });
+dotenv.config({ path: '../.env.local' });
 
 // Database connection configuration using environment variables
 const dbConfig = {
