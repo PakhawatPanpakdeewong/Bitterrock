@@ -1,7 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
+import { query } from '../../database/connection';
 
-export async function GET(request: NextRequest) {
+// Load environment variables
+dotenv.config({ path: '../environment/.env.local' });
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(helmet());
+app.use(cors());
+app.use(morgan('combined'));
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Categories API endpoint
+app.get('/api/categories', async (req, res) => {
   try {
     // First, let's check what tables exist in the database
     const tablesResult = await query(`
@@ -27,51 +49,7 @@ export async function GET(request: NextRequest) {
     console.log('Category-related tables:', categoriesTableResult.rows);
 
     if (categoriesTableResult.rows.length === 0) {
-      // If no categories table exists, let's check if there's a Products table with categories
-      const productsTableQuery = `
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND LOWER(table_name) = 'products'
-        ORDER BY ordinal_position;
-      `;
-
-      const productsColumnsResult = await query(productsTableQuery);
-      console.log('Products table columns:', productsColumnsResult.rows);
-
-      if (productsColumnsResult.rows.length > 0) {
-        // Check if there's a Category column in Products table
-        const hasCategoryColumn = productsColumnsResult.rows.some(
-          (row: any) => row.column_name.toLowerCase().includes('categor')
-        );
-
-        if (hasCategoryColumn) {
-          // Get unique categories from Products table
-          const categoriesFromProducts = await query(`
-            SELECT DISTINCT category as category_name, 
-                   COUNT(*) as product_count,
-                   MIN(created_at) as created_date
-            FROM products 
-            WHERE category IS NOT NULL 
-            GROUP BY category 
-            ORDER BY category;
-          `);
-
-          return NextResponse.json({
-            success: true,
-            data: categoriesFromProducts.rows.map((row: any, index: number) => ({
-              category_id: index + 1,
-              category_name: row.category_name,
-              description: `${row.product_count} products in this category`,
-              created_date: row.created_date || new Date().toISOString().split('T')[0]
-            })),
-            source: 'products_table'
-          });
-        }
-      }
-
-      // If no categories found anywhere, return empty array
-      return NextResponse.json({
+      return res.json({
         success: true,
         data: [],
         message: 'No categories table found. Please create a categories table or add category data to products table.',
@@ -122,7 +100,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    res.json({
       success: true,
       data: mappedCategories,
       source: tableName,
@@ -131,13 +109,19 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching categories:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch categories',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch categories',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
-}
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Backend server running on port ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`📋 Categories API: http://localhost:${PORT}/api/categories`);
+});
+
+export default app;

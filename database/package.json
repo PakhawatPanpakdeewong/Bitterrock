@@ -1,0 +1,24 @@
+{
+  "name": "@bitterrock/database",
+  "version": "1.0.0",
+  "description": "Database configuration and scripts for Bitterrock application",
+  "scripts": {
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js",
+    "reset": "node scripts/reset.js",
+    "test-connection": "node test-db-connection.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.10.9",
+    "@types/node": "^20.10.5"
+  },
+  "keywords": [
+    "postgresql",
+    "database",
+    "migrations"
+  ]
+}

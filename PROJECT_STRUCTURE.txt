@@ -1,0 +1,48 @@
+﻿ Bitterrock Project Structure
+===============================
+
+ frontend/                    # Next.js React Application
+  app/                     # App Router pages
+     categories/page.tsx  # Categories page
+     products/page.tsx    # Products page
+     orders/page.tsx      # Orders page
+     inventory/page.tsx   # Inventory page
+     layout.tsx           # Root layout
+  components/              # UI Components
+     ui/                  # Shadcn UI components
+     utils/               # Utility functions
+  src/store/               # Zustand state management
+  public/                  # Static assets
+  package.json             # Frontend dependencies
+  tsconfig.json            # TypeScript config
+
+ backend/                     # Express.js API Server
+  src/                     # Backend source code
+     controllers/         # Route controllers
+     routes/              # API routes
+     models/              # Data models
+     middleware/          # Express middleware
+     utils/               # Utility functions
+     index.ts             # Main server file
+  package.json             # Backend dependencies
+  tsconfig.json            # TypeScript config
+
+ database/                    # Database Configuration
+  schemas/                 # Database schemas
+     schema.sql           # Complete DB schema
+  migrations/              # Database migrations
+  seeds/                   # Database seed data
+  connection.ts            # DB connection utility
+  test-db-connection.js    # Connection test
+  package.json             # Database dependencies
+
+ environment/                 # Environment Configuration
+  .env.local               # Local environment (SECURE)
+  .env.example             # Environment template
+
+ packages/                    # Shared Packages
+ (Ready for shared utilities)
+
+ package.json                 # Root workspace configuration
+ README.md                    # Project documentation
+ .gitignore                   # Git ignore rules
