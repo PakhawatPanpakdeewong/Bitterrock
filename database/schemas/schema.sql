@@ -7,10 +7,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Categories table
 CREATE TABLE IF NOT EXISTS categories (
     category_id SERIAL PRIMARY KEY,
-    category_name VARCHAR(255) NOT NULL UNIQUE,
-    description TEXT,
-    created_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    category_name VARCHAR(20) NOT NULL UNIQUE
+);
+
+-- Sub categories table
+CREATE TABLE IF NOT EXISTS sub_categories (
+    sub_category_id CHAR(3) PRIMARY KEY,
+    category_id INTEGER REFERENCES categories(category_id) ON DELETE CASCADE,
+    sub_category_name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT
 );
 
 -- Products table
@@ -19,7 +24,19 @@ CREATE TABLE IF NOT EXISTS products (
     category_id INTEGER REFERENCES categories(category_id) ON DELETE SET NULL,
     product_name VARCHAR(255) NOT NULL,
     description TEXT,
-    sku VARCHAR(100) UNIQUE,
+    base_sku VARCHAR(10) UNIQUE,
+    base_price DECIMAL(10,2) NOT NULL CHECK (base_price >= 0)
+);
+
+-- Product variants table
+CREATE TABLE IF NOT EXISTS product_variants (
+    variant_id SERIAL PRIMARY KEY,
+    product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
+    variant_name VARCHAR(255) NOT NULL,
+    variant_value VARCHAR(255) NOT NULL,
+    color VARCHAR(255) NOT NULL,
+    size VARCHAR(255) NOT NULL,
+    sku VARCHAR(12) UNIQUE,
     price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
     stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0),
     image_url TEXT,
@@ -56,6 +73,7 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE TABLE IF NOT EXISTS order_items (
     order_item_id SERIAL PRIMARY KEY,
     order_id INTEGER REFERENCES orders(order_id) ON DELETE CASCADE,
+    variant_id INTEGER REFERENCES product_variants(variant_id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
     quantity_ordered INTEGER NOT NULL CHECK (quantity_ordered > 0),
     unit_price DECIMAL(10,2) NOT NULL CHECK (unit_price >= 0),
@@ -66,6 +84,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE TABLE IF NOT EXISTS inventory (
     inventory_id SERIAL PRIMARY KEY,
     product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
+    variant_id INTEGER REFERENCES product_variants(variant_id) ON DELETE CASCADE,
     warehouse_id INTEGER,
     quantity INTEGER NOT NULL CHECK (quantity >= 0),
     last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -107,6 +126,7 @@ CREATE TABLE IF NOT EXISTS shipping (
 CREATE TABLE IF NOT EXISTS product_reviews (
     review_id SERIAL PRIMARY KEY,
     product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
+    variant_id INTEGER REFERENCES product_variants(variant_id) ON DELETE CASCADE,
     customer_id INTEGER REFERENCES customers(customer_id) ON DELETE CASCADE,
     rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
     review_text TEXT,
@@ -127,6 +147,7 @@ CREATE TABLE IF NOT EXISTS search_results (
     search_result_id SERIAL PRIMARY KEY,
     search_history_id INTEGER REFERENCES search_history(search_history_id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
+    variant_id INTEGER REFERENCES product_variants(variant_id) ON DELETE CASCADE,
     result_rank INTEGER NOT NULL CHECK (result_rank > 0),
     is_clicked BOOLEAN DEFAULT false,
     clicked_date TIMESTAMP WITH TIME ZONE
@@ -136,6 +157,7 @@ CREATE TABLE IF NOT EXISTS search_results (
 CREATE TABLE IF NOT EXISTS sales_summary (
     sales_summary_id SERIAL PRIMARY KEY,
     product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
+    variant_id INTEGER REFERENCES product_variants(variant_id) ON DELETE CASCADE,
     summary_date DATE NOT NULL,
     total_quantity_sold INTEGER DEFAULT 0 CHECK (total_quantity_sold >= 0),
     total_revenue DECIMAL(10,2) DEFAULT 0 CHECK (total_revenue >= 0),
@@ -182,7 +204,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
-CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(base_sku);
+CREATE INDEX IF NOT EXISTS idx_products_variant_id ON products(variant_id);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date);
@@ -194,6 +217,7 @@ CREATE INDEX IF NOT EXISTS idx_shipping_order_id ON shipping(order_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews(product_id);
 CREATE INDEX IF NOT EXISTS idx_search_history_customer_id ON search_history(customer_id);
 CREATE INDEX IF NOT EXISTS idx_sales_summary_product_id ON sales_summary(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_summary_variant_id ON sales_summary(variant_id);
 CREATE INDEX IF NOT EXISTS idx_sales_summary_date ON sales_summary(summary_date);
 CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON sessions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);

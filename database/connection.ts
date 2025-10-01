@@ -1,34 +1,50 @@
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import path from 'path';
 
-// Load environment variables
-dotenv.config({ path: '../.env.local' });
-
-// Database connection configuration using environment variables
-const dbConfig = {
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl: process.env.DB_SSL === 'true'
-};
-
-// Validate required environment variables
-const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-
-if (missingEnvVars.length > 0) {
-  throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+// Load environment variables from common locations, without failing if one path is missing
+const envPaths = [
+  path.resolve(process.cwd(), '.env.local'),
+  path.resolve(process.cwd(), 'environment/.env.local')
+];
+for (const envPath of envPaths) {
+  dotenv.config({ path: envPath });
 }
 
-// Create a connection pool
-const pool = new Pool(dbConfig);
+let pool: Pool | null = null;
 
-// Test the database connection
+function buildDbConfig() {
+  return {
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    ssl: process.env.DB_SSL === 'true'
+  };
+}
+
+function validateEnv() {
+  const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+  const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
+  if (missingEnvVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  }
+}
+
+export function getPool(): Pool {
+  if (!pool) {
+    validateEnv();
+    const dbConfig = buildDbConfig();
+    pool = new Pool(dbConfig);
+  }
+  return pool;
+}
+
+// Test the database connection (call manually if needed)
 export async function testConnection() {
   try {
-    const client = await pool.connect();
+    const client = await getPool().connect();
     console.log('✅ Database connected successfully');
     client.release();
     return true;
@@ -40,7 +56,7 @@ export async function testConnection() {
 
 // Execute a query
 export async function query(text: string, params?: any[]) {
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     const result = await client.query(text, params);
     return result;
@@ -54,7 +70,10 @@ export async function query(text: string, params?: any[]) {
 
 // Close the pool
 export async function closePool() {
-  await pool.end();
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
 }
 
-export default pool;
+export default getPool;

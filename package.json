@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-select": "^2.0.0",
     "@types/pg": "^8.15.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

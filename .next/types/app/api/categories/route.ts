@@ -1,4 +1,4 @@
-// File: C:\Users\USER\Desktop\Bitterrock\app\api\categories\route.ts
+// File: C:\Users\patte\OneDrive\Desktop\WorkSMART\Homework\Project\Bitterrock\app\api\categories\route.ts
 import * as entry from '../../../../../app/api/categories/route.js'
 import type { NextRequest } from 'next/server.js'
 
