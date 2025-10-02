@@ -1,6 +1,4 @@
 {
   "/categories/page": "app/categories/page.js",
-  "/api/sub_categories/route": "app/api/sub_categories/route.js",
-  "/api/categories/route": "app/api/categories/route.js",
-  "/products/page": "app/products/page.js"
+  "/api/sub_categories/route": "app/api/sub_categories/route.js"
 }
