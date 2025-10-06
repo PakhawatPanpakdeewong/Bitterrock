@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS sub_categories (
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
     product_id SERIAL PRIMARY KEY,
-    category_id INTEGER REFERENCES categories(category_id) ON DELETE SET NULL,
+    sub_category_id CHAR(3) REFERENCES sub_categories(sub_category_id) ON DELETE SET NULL,
     product_name VARCHAR(255) NOT NULL,
     description TEXT,
     base_sku VARCHAR(10) UNIQUE,
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_sub_category_id ON products(sub_category_id);
 CREATE INDEX IF NOT EXISTS idx_products_sku ON products(base_sku);
 CREATE INDEX IF NOT EXISTS idx_products_variant_id ON products(variant_id);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);

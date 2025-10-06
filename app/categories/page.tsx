@@ -313,7 +313,7 @@ export default function CategoriesPage() {
   return (
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold">หมวดย่อย</h1>
+        <h1 className="text-2xl font-semibold">ประเภทของสินค้า</h1>
         <div className="flex gap-2">
           <Button 
             onClick={() => setIsAddSubModalOpen(true)}
@@ -354,7 +354,7 @@ export default function CategoriesPage() {
               </Select>
             </div>
             <Button variant="outline" onClick={() => fetchSubCategories(selectedCategoryId)}>
-              รีเฟรชหมวดย่อย
+              รีเฟรช
             </Button>
           </div>
 
