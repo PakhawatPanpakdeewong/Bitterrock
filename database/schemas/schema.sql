@@ -22,23 +22,35 @@ CREATE TABLE IF NOT EXISTS sub_categories (
 CREATE TABLE IF NOT EXISTS products (
     product_id SERIAL PRIMARY KEY,
     sub_category_id CHAR(3) REFERENCES sub_categories(sub_category_id) ON DELETE SET NULL,
-    product_name VARCHAR(255) NOT NULL,
+    product_name_th VARCHAR(255) NOT NULL,
+    product_name_en VARCHAR(255) NOT NULL,
     description TEXT,
     base_sku VARCHAR(10) UNIQUE,
     base_price DECIMAL(10,2) NOT NULL CHECK (base_price >= 0)
+);
+
+-- Attributes table
+CREATE TABLE IF NOT EXISTS attributes (
+    attribute_id SERIAL PRIMARY KEY,
+    attribute_name_th VARCHAR(255) NOT NULL,
+    attribute_name_en VARCHAR(255) NOT NULL
+);
+
+-- Attribute values table
+CREATE TABLE IF NOT EXISTS attribute_values (
+    attribute_value_id CHAR(3) PRIMARY KEY,
+    attribute_id INTEGER REFERENCES attributes(attribute_id) ON DELETE CASCADE,
+    attribute_value_th VARCHAR(255) NOT NULL,
+    attribute_value_en VARCHAR(255) NOT NULL
 );
 
 -- Product variants table
 CREATE TABLE IF NOT EXISTS product_variants (
     variant_id SERIAL PRIMARY KEY,
     product_id INTEGER REFERENCES products(product_id) ON DELETE CASCADE,
-    variant_name VARCHAR(255) NOT NULL,
-    variant_value VARCHAR(255) NOT NULL,
-    color VARCHAR(255) NOT NULL,
-    size VARCHAR(255) NOT NULL,
-    sku VARCHAR(12) UNIQUE,
+    attribute_value_id CHAR(3) REFERENCES attribute_values(attribute_value_id) ON DELETE CASCADE,
+    sku VARCHAR(15) UNIQUE,
     price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
-    stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0),
     image_url TEXT,
     is_active BOOLEAN DEFAULT true,
     created_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

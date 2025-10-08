@@ -330,6 +330,12 @@ export default function CategoriesPage() {
         </div>
       </div>
 
+      {isEditMode && (
+        <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded p-3">
+          คลิกแถวรายการเพื่อแก้ไขข้อมูลหมวดย่อย
+        </div>
+      )}
+
       {/* Subcategories Filter */}
       <Card>
         <CardHeader>
@@ -401,11 +407,7 @@ export default function CategoriesPage() {
         </CardContent>
       </Card>
 
-      {isEditMode && (
-        <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded p-3">
-          คลิกแถวรายการเพื่อแก้ไขข้อมูลหมวดย่อย
-        </div>
-      )}
+      
 
       {/* Add Subcategory Modal */}
       <Modal

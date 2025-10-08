@@ -1,6 +1,9 @@
 {
-  "/products/page": "app/products/page.js",
   "/categories/page": "app/categories/page.js",
-  "/api/r2-objects/route": "app/api/r2-objects/route.js",
-  "/api/products/route": "app/api/products/route.js"
+  "/api/attributes/route": "app/api/attributes/route.js",
+  "/api/products/route": "app/api/products/route.js",
+  "/products/page": "app/products/page.js",
+  "/api/product-variants/route": "app/api/product-variants/route.js",
+  "/api/sub_categories/route": "app/api/sub_categories/route.js",
+  "/api/categories/route": "app/api/categories/route.js"
 }

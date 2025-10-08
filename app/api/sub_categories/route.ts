@@ -256,6 +256,23 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Block deletion if any products reference this subcategory
+    const prodCountRes = await query(
+      'SELECT COUNT(1) AS cnt FROM products WHERE sub_category_id = $1',
+      [sub_category_id.toUpperCase()]
+    );
+    const prodCount = Number(prodCountRes.rows?.[0]?.cnt || 0);
+    if (prodCount > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Cannot delete: subcategory is in use by existing products',
+          details: `There are ${prodCount} product(s) referencing this subcategory.`,
+        },
+        { status: 409 }
+      );
+    }
+
     // Delete subcategory
     await query(
       'DELETE FROM sub_categories WHERE sub_category_id = $1',
