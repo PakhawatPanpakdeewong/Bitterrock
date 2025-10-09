@@ -74,6 +74,8 @@ export async function GET(req: NextRequest) {
       sub_categories_name: p.sub_category_name,
       // keep field name 'product_name' for frontend compatibility; use TH name by default
       product_name: p.product_name_th,
+      product_name_th: p.product_name_th,
+      product_name_en: p.product_name_en,
       description: p.description,
       base_sku: p.base_sku,
       base_price: Number(p.base_price),

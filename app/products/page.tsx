@@ -12,6 +12,8 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
+import { ResponsiveImage } from "@/components/ui/responsive-image";
+import { Grid, List } from "lucide-react";
 
 type Variant = {
   variant_id: number;
@@ -19,12 +21,15 @@ type Variant = {
   sku: string | null;
   price: number;
   description?: string;
+  image_url?: string | null;
 };
 
 type Product = {
   id: number;
   sub_categories_name: string | null;
-  product_name: string; // using TH name from API
+  product_name: string; // using TH name from API (for backward compatibility)
+  product_name_th: string;
+  product_name_en: string;
   description: string | null;
   base_sku: string | null;
   base_price: number;
@@ -55,9 +60,14 @@ export default function ProductsPage() {
     product_name_en?: string;
   })>(null);
   const [editOpen, setEditOpen] = useState<boolean>(false);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailOpen, setDetailOpen] = useState<boolean>(false);
+  const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
 
   const [serverProducts, setServerProducts] = useState<Product[]>(mockProducts);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'picture' | 'card'>('card');
   // Catalog data for create step 1 (declare before effects that use them)
   type UiCategory = { category_id: number; category_name: string };
   type UiSubCategory = { sub_category_id: string; sub_category_name: string; category_id: number | null };
@@ -249,8 +259,46 @@ export default function ProductsPage() {
   };
 
   const openEdit = (p: Product) => {
-    setEditForm({ ...p, product_name_th: p.product_name, product_name_en: p.product_name });
+    setEditForm({ 
+      ...p, 
+      product_name_th: p.product_name_th || p.product_name, 
+      product_name_en: p.product_name_en || p.product_name 
+    });
     setEditOpen(true);
+  };
+
+  const openDetail = (p: Product) => {
+    setDetailProduct(p);
+    setDetailOpen(true);
+  };
+
+  const openDelete = (p: Product) => {
+    setDeleteProduct(p);
+    setDeleteOpen(true);
+  };
+
+  // Function to find image by BASE SKU (first 8 characters only)
+  const findImageBySku = (baseSku: string | null) => {
+    if (!baseSku) return null;
+    
+    // Take only first 8 characters of the BASE SKU
+    const skuPrefix = baseSku.substring(0, 8);
+    
+    // Look for image with matching SKU prefix
+    const matchingImage = images.find(img => {
+      // Extract SKU from image key and take first 8 characters
+      const imageSku = img.key.split('.')[0]; // Remove file extension
+      const imageSkuPrefix = imageSku.substring(0, 8);
+      return imageSkuPrefix === skuPrefix;
+    });
+    
+    if (matchingImage) {
+      console.log(`✅ Found image for SKU ${baseSku} (prefix: ${skuPrefix}): ${matchingImage.key}`);
+    } else {
+      console.log(`❌ No image found for SKU ${baseSku} (prefix: ${skuPrefix})`);
+    }
+    
+    return matchingImage?.url || null;
   };
 
   const handleEditSave = async () => {
@@ -259,8 +307,8 @@ export default function ProductsPage() {
       setBusy(true);
       const payload: any = {
         product_id: editForm.id,
-        product_name_th: editForm.product_name_th?.trim(),
-        product_name_en: editForm.product_name_en?.trim(),
+        product_name_th: editForm.product_name_th?.trim() || editForm.product_name?.trim(),
+        product_name_en: editForm.product_name_en?.trim() || editForm.product_name?.trim(),
         base_sku: editForm.base_sku || null,
         description: editForm.description || null,
         base_price: editForm.base_price,
@@ -282,14 +330,15 @@ export default function ProductsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    const confirmDelete = window.confirm("ยืนยันการลบสินค้านี้?");
-    if (!confirmDelete) return;
+  const handleDelete = async () => {
+    if (!deleteProduct) return;
     try {
       setBusy(true);
-      const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/products?id=${deleteProduct.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "ลบสินค้าไม่สำเร็จ");
+      setDeleteOpen(false);
+      setDeleteProduct(null);
       await refetchProducts();
     } catch (e: any) {
       setError(e?.message || "ลบสินค้าไม่สำเร็จ");
@@ -303,75 +352,134 @@ export default function ProductsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">สินค้าทั้งหมด</h1>
         <div className="flex gap-2">
-          <Button onClick={() => setCreateOpen(true)}>เพิ่มสินค้า</Button>
+          <Button 
+            onClick={() => setCreateOpen(true)}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            เพิ่มสินค้า
+          </Button>
+          <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setViewMode('picture')}
+              className={`rounded-none border-0 ${
+                viewMode === 'picture' 
+                  ? 'bg-gray-200 text-gray-800' 
+                  : 'bg-transparent text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Grid className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setViewMode('card')}
+              className={`rounded-none border-0 ${
+                viewMode === 'card' 
+                  ? 'bg-gray-200 text-gray-800' 
+                  : 'bg-transparent text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <List className="w-4 h-4" />
+            </Button>
+          </div>
           <Button variant={isEditMode ? "secondary" : "outline"} onClick={() => setIsEditMode((p) => !p)}>
             {isEditMode ? "ยกเลิกโหมดแก้ไข" : "โหมดแก้ไข"}
           </Button>
         </div>
       </div>
       
-      {/* R2 images preview grid: 10 items per row, wraps to next rows */}
-      <div className="grid grid-cols-10 gap-2 py-4">
-        {loading ? (
-          <span className="text-sm text-gray-500">กำลังโหลดรูปภาพจากคลัง...</span>
-        ) : error ? (
-          <span className="text-sm text-red-600">{error}</span>
-        ) : images.length === 0 ? (
-          <span className="text-sm text-gray-500">ไม่พบรูปภาพในบัคเก็ต</span>
-        ) : (
-          images.map((img) => (
-            <div key={img.key} className="w-28 h-28 bg-gray-100 rounded-lg flex items-center justify-center">
-              {img.url ? (
-                <img src={img.url} alt={img.key} className="w-24 h-24 object-contain" />
-              ) : (
-                <span className="text-[10px] text-gray-500 px-1 text-center break-words">{img.key}</span>
-              )}
-            </div>
-          ))
-        )}
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {serverProducts.map((product) => {
-          return (
-            <Card key={product.id} className="overflow-hidden">
-              <CardContent className="p-0">
-                <div className="flex flex-col">
-                  {/* Collapsed header: show info only, no images */}
-                  <div className="p-4 space-y-2">
-                    <h3 className="text-sm font-medium text-gray-700">{product.sub_categories_name}</h3>
-                    <h2 className="text-base font-semibold line-clamp-2">{product.product_name}</h2>
-                    <p className="text-gray-600 text-xs line-clamp-3">{product.description}</p>
-                    <div className="flex items-center gap-4 text-sm text-gray-700">
-                      <span>SKU: <span className="font-medium">{product.base_sku}</span></span>
-                      <span>ราคา: <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} บาท</span></span>
-                    </div>
-                    {isEditMode && (
-                      <div className="flex items-center gap-2 pt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEdit(product)}
-                        >
-                          แก้ไข
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(product.id)}
-                          disabled={busy}
-                        >
-                          ลบ
-                        </Button>
-                      </div>
+      {/* Product Display - Conditional based on view mode */}
+      {viewMode === 'picture' ? (
+        // Picture View - Grid of images only
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+          {serverProducts.map((product) => {
+            // Try to find image by BASE SKU first, then fallback to variant image
+            const skuImage = findImageBySku(product.base_sku);
+            const variantImage = product.variants?.find(v => v.image_url)?.image_url;
+            const productImage = skuImage || variantImage;
+            
+            return (
+              <div
+                key={product.id}
+                className="group cursor-pointer relative"
+                onClick={() => isEditMode ? openEdit(product) : openDetail(product)}
+                title={product.product_name}
+              >
+                <ResponsiveImage
+                  src={productImage || ''}
+                  alt={product.product_name}
+                  aspectRatio="square"
+                  objectFit="contain"
+                  hoverEffect={true}
+                  containerClassName="group-hover:shadow-lg transition-shadow duration-200"
+                />
+                {/* Minimal overlay info */}
+                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-end pointer-events-none">
+                  <div className="p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full">
+                    <div className="text-xs font-medium leading-tight break-words line-clamp-2">{product.product_name}</div>
+                    <div className="text-xs mt-1 font-semibold">{product.base_price.toFixed(2)} บาท</div>
+                    {product.base_sku && (
+                      <div className="text-xs mt-1 opacity-75">SKU: {product.base_sku}</div>
                     )}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Card View - Detailed cards
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
+          {serverProducts.map((product) => {
+            // Try to find image by BASE SKU first, then fallback to variant image
+            const skuImage = findImageBySku(product.base_sku);
+            const variantImage = product.variants?.find(v => v.image_url)?.image_url;
+            const productImage = skuImage || variantImage;
+            
+            return (
+              <Card 
+                key={product.id} 
+                className="overflow-hidden hover:shadow-lg transition-shadow duration-200 cursor-pointer"
+                onClick={() => isEditMode ? openEdit(product) : openDetail(product)}
+              >
+                <CardContent className="p-0">
+                  <div className="flex flex-col h-full">
+                    {/* Product Image */}
+                    <ResponsiveImage
+                      src={productImage || ''}
+                      alt={product.product_name}
+                      aspectRatio="square"
+                      objectFit="contain"
+                      hoverEffect={true}
+                    />
+                    
+                    {/* Product Info */}
+                    <div className="p-4 space-y-2 flex-1 flex flex-col">
+                      <h3 className="text-sm font-medium text-gray-700">{product.sub_categories_name}</h3>
+                      <h2 className="text-base font-semibold line-clamp-2">{product.product_name}</h2>
+                      <p className="text-gray-600 text-xs line-clamp-3 flex-1">{product.description}</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-700">
+                        <span className="truncate">SKU: <span className="font-medium">{product.base_sku}</span></span>
+                        <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} บาท</span>
+                      </div>
+                      
+                    {/* Variants count only */}
+                    {product.variants && product.variants.length > 0 && (
+                      <div className="text-xs text-gray-500">
+                        {product.variants.length} รูปแบบ
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* Edit modal */}
       <Modal isOpen={editOpen} onClose={() => { setEditOpen(false); setEditForm(null); }} title="แก้ไขสินค้า">
@@ -380,15 +488,29 @@ export default function ProductsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="edit_name_th">ชื่อสินค้า (TH)</Label>
-                <Input id="edit_name_th" value={editForm.product_name_th || ""} onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_th: e.target.value }) : f)} />
+                <Input 
+                  id="edit_name_th" 
+                  value={editForm.product_name_th || ""} 
+                  onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_th: e.target.value }) : f)} 
+                />
               </div>
               <div>
                 <Label htmlFor="edit_name_en">ชื่อสินค้า (EN)</Label>
-                <Input id="edit_name_en" value={editForm.product_name_en || ""} onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_en: e.target.value }) : f)} />
+                <Input 
+                  id="edit_name_en" 
+                  value={editForm.product_name_en || ""} 
+                  onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_en: e.target.value }) : f)} 
+                />
               </div>
               <div>
                 <Label htmlFor="edit_sku">Base SKU</Label>
-                <Input id="edit_sku" value={editForm.base_sku || ""} onChange={(e) => setEditForm((f) => f ? ({ ...f, base_sku: e.target.value }) : f)} />
+                <Input 
+                  id="edit_sku" 
+                  value={editForm.base_sku || ""} 
+                  readOnly
+                  className="bg-gray-100 cursor-not-allowed"
+                  placeholder="Auto-generated SKU"
+                />
               </div>
               <div>
                 <Label htmlFor="edit_price">ราคาเริ่มต้น</Label>
@@ -399,9 +521,26 @@ export default function ProductsPage() {
                 <Textarea id="edit_desc" value={editForm.description || ""} onChange={(e) => setEditForm((f) => f ? ({ ...f, description: e.target.value }) : f)} />
               </div>
             </div>
-            <div className="flex items-center gap-2 pt-2">
-              <Button onClick={handleEditSave} disabled={busy}>บันทึก</Button>
-              <Button variant="outline" onClick={() => { setEditOpen(false); setEditForm(null); }}>ยกเลิก</Button>
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (editForm) {
+                      setEditOpen(false);
+                      openDelete(editForm);
+                    }
+                  }}
+                  disabled={busy}
+                >
+                  ลบสินค้า
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => { setEditOpen(false); setEditForm(null); }}>ยกเลิก</Button>
+                <Button onClick={handleEditSave} disabled={busy}>บันทึก</Button>
+              </div>
             </div>
           </div>
         )}
@@ -541,6 +680,138 @@ export default function ProductsPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* Product Detail Modal */}
+      <Modal isOpen={detailOpen} onClose={() => { setDetailOpen(false); setDetailProduct(null); }} title="รายละเอียดสินค้า">
+        {detailProduct && (
+          <div className="space-y-6">
+            {/* Product Image */}
+            <div className="flex justify-center">
+              <ResponsiveImage
+                src={findImageBySku(detailProduct.base_sku) || detailProduct.variants?.find(v => v.image_url)?.image_url || ''}
+                alt={detailProduct.product_name}
+                aspectRatio="square"
+                objectFit="contain"
+                hoverEffect={false}
+                containerClassName="max-w-xs"
+              />
+            </div>
+
+            {/* Product Info */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-1">{detailProduct.sub_categories_name}</h3>
+                <h2 className="text-xl font-semibold text-gray-900">{detailProduct.product_name}</h2>
+              </div>
+
+              <p className="text-gray-600 text-sm leading-relaxed">{detailProduct.description}</p>
+
+              <div className="flex items-center justify-between py-3 border-t border-b border-gray-200">
+                <span className="text-sm text-gray-700">SKU: <span className="font-medium">{detailProduct.base_sku}</span></span>
+                <span className="text-lg font-bold text-blue-600">{detailProduct.base_price.toFixed(2)} บาท</span>
+              </div>
+
+              {/* Variants Detail */}
+              {detailProduct.variants && detailProduct.variants.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-base font-semibold text-gray-900">
+                    รูปแบบที่มี ({detailProduct.variants.length} รูปแบบ)
+                  </h4>
+                  <div className="grid gap-3">
+                    {detailProduct.variants.map((variant) => (
+                      <div key={variant.variant_id} className="p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 mb-1">{variant.variant_name}</div>
+                            <div className="text-sm text-gray-600">SKU: {variant.sku}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-semibold text-blue-600">{variant.price.toFixed(2)} บาท</div>
+                            {variant.image_url && (
+                              <div className="mt-2">
+                                <ResponsiveImage
+                                  src={variant.image_url}
+                                  alt={variant.variant_name}
+                                  aspectRatio="square"
+                                  objectFit="contain"
+                                  hoverEffect={true}
+                                  containerClassName="w-16 h-16"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={deleteOpen} onClose={() => { setDeleteOpen(false); setDeleteProduct(null); }} title="ยืนยันการลบสินค้า">
+        {deleteProduct && (
+          <div className="space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-medium text-gray-900">ลบสินค้า</h3>
+                <p className="text-sm text-gray-500">การกระทำนี้ไม่สามารถยกเลิกได้</p>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="flex-shrink-0">
+                  <ResponsiveImage
+                    src={findImageBySku(deleteProduct.base_sku) || deleteProduct.variants?.find(v => v.image_url)?.image_url || ''}
+                    alt={deleteProduct.product_name}
+                    aspectRatio="square"
+                    objectFit="contain"
+                    hoverEffect={false}
+                    containerClassName="w-12 h-12"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{deleteProduct.product_name}</p>
+                  <p className="text-sm text-gray-500">SKU: {deleteProduct.base_sku}</p>
+                  <p className="text-sm text-gray-500">{deleteProduct.base_price.toFixed(2)} บาท</p>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600">
+              คุณต้องการลบสินค้า <span className="font-medium">"{deleteProduct.product_name}"</span> หรือไม่?
+            </p>
+
+            <div className="flex items-center justify-end space-x-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => { setDeleteOpen(false); setDeleteProduct(null); }}
+                disabled={busy}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={busy}
+              >
+                {busy ? "กำลังลบ..." : "ลบสินค้า"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
