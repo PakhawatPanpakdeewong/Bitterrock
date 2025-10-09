@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { ResponsiveImage } from "@/components/ui/responsive-image";
-import { Grid, List } from "lucide-react";
+import { Grid, List, RefreshCw } from "lucide-react";
 
 type Variant = {
   variant_id: number;
@@ -53,6 +53,8 @@ export default function ProductsPage() {
     description: "",
     sub_category_id: "",
   });
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState<boolean>(false);
   const [createStep, setCreateStep] = useState<1 | 2 | 3>(1);
   const [editForm, setEditForm] = useState<null | (Product & {
@@ -173,28 +175,60 @@ export default function ProductsPage() {
 
   const refetchProducts = async () => {
     try {
-      const res = await fetch("/api/products?limit=30", { cache: "no-store" });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || "Failed to load products");
-      setServerProducts(data.items || []);
+      setBusy(true);
+      setError(null);
+      
+      const [imgRes, prodRes] = await Promise.all([
+        fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
+        fetch("/api/products?limit=30", { cache: "no-store" }),
+      ]);
+      
+      const imgData = await imgRes.json();
+      const prodData = await prodRes.json();
+      
+      if (!imgData.ok) throw new Error(imgData.error || "Failed to load images");
+      if (!prodData.ok) throw new Error(prodData.error || "Failed to load products");
+      
+      setImages(imgData.items || []);
+      setServerProducts(prodData.items || []);
     } catch (e: any) {
-      setError(e?.message || "Failed to load products");
+      setError(e?.message || "Failed to refresh data");
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleCreate = async () => {
     try {
       setBusy(true);
+      
+      // Generate BASE SKU
+      const baseSku = generateBaseSku(selectedSubCategoryId, createForm.product_name_en);
+      
+      // Upload image if provided
+      let imageUrl = null;
+      if (uploadedImage) {
+        const formData = new FormData();
+        formData.append('file', uploadedImage);
+        formData.append('newName', `${baseSku}.jpg`);
+        
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        const uploadData = await uploadRes.json();
+        if (!uploadData.ok) {
+          throw new Error(uploadData.error || 'อัปโหลดรูปภาพไม่สำเร็จ');
+        }
+        imageUrl = uploadData.url;
+      }
+      
       const payload = {
         product_name_th: createForm.product_name_th.trim(),
         product_name_en: createForm.product_name_en.trim(),
         base_price: Number(createForm.base_price || 0),
-        base_sku: (() => {
-          if (!selectedSubCategoryId || !createForm.product_name_en) return null;
-          const prefix = selectedSubCategoryId;
-          const suffix = createForm.product_name_en.substring(0, 3).toUpperCase();
-          return `${prefix}-${suffix}`;
-        })(),
+        base_sku: baseSku,
         description: createForm.description.trim() || null,
         sub_category_id: (createForm.sub_category_id || selectedSubCategoryId || '').trim() || null,
       };
@@ -249,6 +283,8 @@ export default function ProductsPage() {
       setSelectedCategoryId("");
       setSelectedSubCategoryId("");
       setSelectedAttributes({});
+      setUploadedImage(null);
+      setImagePreview(null);
       setCreateStep(1);
       await refetchProducts();
     } catch (e: any) {
@@ -275,6 +311,47 @@ export default function ProductsPage() {
   const openDelete = (p: Product) => {
     setDeleteProduct(p);
     setDeleteOpen(true);
+  };
+
+  // Generate BASE SKU prefix (XXX-XXX) for Step 2 preview
+  const generateBaseSkuPrefix = (subCategoryId: string, productNameEn: string) => {
+    if (!subCategoryId || !productNameEn || productNameEn.length < 3) return "";
+    
+    // Take first 3 characters of subcategory and product name
+    const categoryPrefix = subCategoryId.substring(0, 3).toUpperCase();
+    const productPrefix = productNameEn.substring(0, 3).toUpperCase();
+    
+    return `${categoryPrefix}-${productPrefix}-`;
+  };
+
+  // Generate complete BASE SKU in XXX-XXX-YY format (for Step 3)
+  const generateBaseSku = (subCategoryId: string, productNameEn: string) => {
+    if (!subCategoryId || !productNameEn || productNameEn.length < 3) return "";
+    
+    // Take first 3 characters of subcategory and product name
+    const categoryPrefix = subCategoryId.substring(0, 3).toUpperCase();
+    const productPrefix = productNameEn.substring(0, 3).toUpperCase();
+    
+    // Generate 2 random letters A-Z
+    const randomLetters = String.fromCharCode(
+      65 + Math.floor(Math.random() * 26), // A-Z
+      65 + Math.floor(Math.random() * 26)  // A-Z
+    );
+    
+    return `${categoryPrefix}-${productPrefix}-${randomLetters}`;
+  };
+
+  // Handle image upload
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadedImage(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Function to find image by BASE SKU (first 8 characters only)
@@ -351,19 +428,19 @@ export default function ProductsPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">สินค้าทั้งหมด</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Button 
             onClick={() => setCreateOpen(true)}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-green-600 hover:bg-green-700 text-white h-9"
           >
             เพิ่มสินค้า
           </Button>
-          <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
+          <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-gray-50 h-9">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setViewMode('picture')}
-              className={`rounded-none border-0 ${
+              className={`rounded-none border-0 h-9 px-3 ${
                 viewMode === 'picture' 
                   ? 'bg-gray-200 text-gray-800' 
                   : 'bg-transparent text-gray-600 hover:bg-gray-100'
@@ -375,7 +452,7 @@ export default function ProductsPage() {
               variant="ghost"
               size="sm"
               onClick={() => setViewMode('card')}
-              className={`rounded-none border-0 ${
+              className={`rounded-none border-0 h-9 px-3 ${
                 viewMode === 'card' 
                   ? 'bg-gray-200 text-gray-800' 
                   : 'bg-transparent text-gray-600 hover:bg-gray-100'
@@ -384,7 +461,21 @@ export default function ProductsPage() {
               <List className="w-4 h-4" />
             </Button>
           </div>
-          <Button variant={isEditMode ? "secondary" : "outline"} onClick={() => setIsEditMode((p) => !p)}>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={refetchProducts}
+            disabled={busy}
+            className="flex items-center gap-2 h-9"
+            title="รีเฟรชข้อมูลสินค้าและรูปภาพ"
+          >
+            <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button 
+            variant={isEditMode ? "secondary" : "outline"} 
+            onClick={() => setIsEditMode((p) => !p)}
+            className="h-9"
+          >
             {isEditMode ? "ยกเลิกโหมดแก้ไข" : "โหมดแก้ไข"}
           </Button>
         </div>
@@ -466,12 +557,6 @@ export default function ProductsPage() {
                         <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} บาท</span>
                       </div>
                       
-                    {/* Variants count only */}
-                    {product.variants && product.variants.length > 0 && (
-                      <div className="text-xs text-gray-500">
-                        {product.variants.length} รูปแบบ
-                      </div>
-                    )}
                     </div>
                   </div>
                 </CardContent>
@@ -606,18 +691,13 @@ export default function ProductsPage() {
                   <Input id="base_price" type="number" step="0.01" value={createForm.base_price} onChange={(e) => setCreateForm((f) => ({ ...f, base_price: e.target.value }))} />
                 </div>
                 <div>
-                  <Label htmlFor="base_sku">Base SKU (Auto-generated)</Label>
+                  <Label htmlFor="base_sku">Base SKU</Label>
                   <Input 
                     id="base_sku" 
-                    value={(() => {
-                      if (!selectedSubCategoryId || !createForm.product_name_en) return "";
-                      const prefix = selectedSubCategoryId;
-                      const suffix = createForm.product_name_en.substring(0, 3).toUpperCase();
-                      return `${prefix}-${suffix}`;
-                    })()} 
+                    value={generateBaseSkuPrefix(selectedSubCategoryId, createForm.product_name_en)} 
                     readOnly 
                     className="bg-gray-100 cursor-not-allowed"
-                    placeholder="Select subcategory and enter product name"
+                    placeholder="กรุณาใส่ชื่อสินค้า (EN)"
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -634,45 +714,68 @@ export default function ProductsPage() {
               )}
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="text-sm text-gray-600 mb-4">เลือกแอตทริบิวต์และค่าที่ต้องการ (ไม่บังคับ)</div>
-              {attributesLoading ? (
-                <div className="text-sm text-gray-500">กำลังโหลดแอตทริบิวต์...</div>
-              ) : attributesError ? (
-                <div className="text-sm text-red-600">{attributesError}</div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {attributes.map((attr) => (
-                    <div key={attr.attribute_id} className="space-y-2">
-                      <Label className="text-sm font-medium">{attr.attribute_name_th}</Label>
-                      <Select 
-                        value={selectedAttributes[attr.attribute_id] || "none"} 
-                        onValueChange={(value: string) => {
-                          setSelectedAttributes(prev => ({
-                            ...prev,
-                            [attr.attribute_id]: value === "none" ? "" : value
-                          }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="เลือกค่าที่ต้องการ" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">ไม่เลือก</SelectItem>
-                          {attr.values?.map((value) => (
-                            <SelectItem key={value.attribute_value_id} value={value.attribute_value_id}>
-                              {value.attribute_value_th}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600 mb-4">อัปโหลดรูปภาพสินค้า</div>
+              
+              {/* Image Upload Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-center w-full">
+                  <label htmlFor="product-image" className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025M5 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm0 0h2a2 2 0 0 0 2-2V1a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2Z"/>
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 13h6l-3-3-3 3Z"/>
+                      </svg>
+                      <p className="mb-2 text-sm text-gray-500">
+                        <span className="font-semibold">คลิกเพื่ออัปโหลด</span> รูปภาพสินค้า
+                      </p>
+                      <p className="text-xs text-gray-500">PNG, JPG หรือ GIF (สูงสุด 10MB)</p>
                     </div>
-                  ))}
+                    <input 
+                      id="product-image" 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                    />
+                  </label>
                 </div>
-              )}
+
+                {/* Image Preview */}
+                {imagePreview && (
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className="relative">
+                      <img 
+                        src={imagePreview} 
+                        alt="Product preview" 
+                        className="w-32 h-32 object-cover rounded-lg border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUploadedImage(null);
+                          setImagePreview(null);
+                        }}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      รูปภาพจะถูกบันทึกเป็น: <span className="font-mono font-semibold">{generateBaseSku(selectedSubCategoryId, createForm.product_name_en)}.jpg</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2 pt-2 justify-end">
                 <Button variant="outline" onClick={() => setCreateStep(2)}>ย้อนกลับ</Button>
-                <Button onClick={async () => { await handleCreate(); if (!error) { setCreateOpen(false); setCreateStep(1); } }} disabled={busy}>เสร็จสิ้น</Button>
+                <Button 
+                  onClick={async () => { await handleCreate(); if (!error) { setCreateOpen(false); setCreateStep(1); } }} 
+                  disabled={busy || !uploadedImage}
+                >
+                  {busy ? "กำลังสร้าง..." : "เสร็จสิ้น"}
+                </Button>
               </div>
               {error && (
                 <div className="text-sm text-red-600">{error}</div>
@@ -712,41 +815,6 @@ export default function ProductsPage() {
                 <span className="text-lg font-bold text-blue-600">{detailProduct.base_price.toFixed(2)} บาท</span>
               </div>
 
-              {/* Variants Detail */}
-              {detailProduct.variants && detailProduct.variants.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="text-base font-semibold text-gray-900">
-                    รูปแบบที่มี ({detailProduct.variants.length} รูปแบบ)
-                  </h4>
-                  <div className="grid gap-3">
-                    {detailProduct.variants.map((variant) => (
-                      <div key={variant.variant_id} className="p-3 bg-gray-50 rounded-lg border">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900 mb-1">{variant.variant_name}</div>
-                            <div className="text-sm text-gray-600">SKU: {variant.sku}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-blue-600">{variant.price.toFixed(2)} บาท</div>
-                            {variant.image_url && (
-                              <div className="mt-2">
-                                <ResponsiveImage
-                                  src={variant.image_url}
-                                  alt={variant.variant_name}
-                                  aspectRatio="square"
-                                  objectFit="contain"
-                                  hoverEffect={true}
-                                  containerClassName="w-16 h-16"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

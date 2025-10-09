@@ -9,8 +9,8 @@ const navigationItems = [
   { name: 'หน้าแรก', href: '/' },
   { name: 'ประเภทสินค้า', href: '/categories' },
   { name: 'สินค้าทั้งหมด', href: '/products' },
-  { name: 'รายการสั่งซื้อ', href: '/orders' },
   { name: 'คลังสินค้า', href: '/inventory' },
+  { name: 'รายการสั่งซื้อ', href: '/orders' },
 ];
 
 export function Navigation() {
