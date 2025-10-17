@@ -275,8 +275,7 @@ CREATE TABLE IF NOT EXISTS SalesSummary (
     SummaryDate DATE NOT NULL,
     TotalQuantitySold INTEGER DEFAULT 0 CHECK (TotalQuantitySold >= 0),
     TotalRevenue DECIMAL(10,2) DEFAULT 0 CHECK (TotalRevenue >= 0),
-    LastCalculatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(OrderID, SummaryDate)
+    LastCalculatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Discounts table
