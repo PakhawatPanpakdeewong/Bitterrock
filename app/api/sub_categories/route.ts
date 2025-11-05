@@ -7,24 +7,26 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const categoryIdParam = searchParams.get('category_id');
 
-    // Build base query
+    // Build base query - using lowercase table and column names without underscores
     let sql = `
       SELECT 
-        sc.sub_category_id,
-        sc.sub_category_name,
-        sc.description,
-        sc.category_id,
-        c.category_name
-      FROM sub_categories sc
-      LEFT JOIN categories c ON c.category_id = sc.category_id
+        sc.subcategoryid as sub_category_id,
+        sc.subcategorynameth as sub_category_name_th,
+        sc.subcategorynameen as sub_category_name_en,
+        sc.subcategorynameth as sub_category_name,
+        sc.categoryid as category_id,
+        c.categorynameth as category_name_th,
+        c.categorynameen as category_name_en
+      FROM subcategories sc
+      LEFT JOIN categories c ON c.categoryid = sc.categoryid
     `;
 
     const params: any[] = [];
     if (categoryIdParam) {
-      sql += ` WHERE sc.category_id = $1`;
+      sql += ` WHERE sc.categoryid = $1`;
       params.push(parseInt(categoryIdParam));
     }
-    sql += ` ORDER BY c.category_name NULLS LAST, sc.sub_category_name`;
+    sql += ` ORDER BY c.categorynameth NULLS LAST, sc.subcategorynameth`;
 
     const result = await query(sql, params);
 
@@ -49,16 +51,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sub_category_id, category_id, sub_category_name, description } = body;
+    const { category_id, sub_category_name_th, sub_category_name_en } = body;
 
     // Validate required fields
-    if (!sub_category_id || sub_category_id.trim() === '') {
-      return NextResponse.json(
-        { success: false, error: 'Subcategory ID is required' },
-        { status: 400 }
-      );
-    }
-
     if (!category_id) {
       return NextResponse.json(
         { success: false, error: 'Category is required' },
@@ -66,44 +61,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!sub_category_name || sub_category_name.trim() === '') {
+    if (!sub_category_name_th || sub_category_name_th.trim() === '') {
       return NextResponse.json(
-        { success: false, error: 'Subcategory name is required' },
+        { success: false, error: 'Subcategory name (Thai) is required' },
         { status: 400 }
       );
     }
 
-    if (!description || description.trim() === '') {
+    if (!sub_category_name_en || sub_category_name_en.trim() === '') {
       return NextResponse.json(
-        { success: false, error: 'Description is required' },
+        { success: false, error: 'Subcategory name (English) is required' },
         { status: 400 }
-      );
-    }
-
-    // Validate subcategory ID format (3 characters)
-    if (sub_category_id.trim().length !== 3) {
-      return NextResponse.json(
-        { success: false, error: 'Subcategory ID must be exactly 3 characters' },
-        { status: 400 }
-      );
-    }
-
-    // Check if subcategory ID already exists
-    const existingSubcategory = await query(
-      'SELECT sub_category_id FROM sub_categories WHERE sub_category_id = $1',
-      [sub_category_id.trim().toUpperCase()]
-    );
-
-    if (existingSubcategory.rows.length > 0) {
-      return NextResponse.json(
-        { success: false, error: 'Subcategory with this ID already exists' },
-        { status: 409 }
       );
     }
 
     // Check if category exists
     const categoryExists = await query(
-      'SELECT category_id FROM categories WHERE category_id = $1',
+      'SELECT categoryid FROM categories WHERE categoryid = $1',
       [parseInt(category_id)]
     );
 
@@ -114,12 +88,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert new subcategory
+    // Insert new subcategory (subcategoryid is SERIAL, auto-generated)
     const result = await query(
-      `INSERT INTO sub_categories (sub_category_id, category_id, sub_category_name, description) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING sub_category_id, category_id, sub_category_name, description`,
-      [sub_category_id.trim().toUpperCase(), parseInt(category_id), sub_category_name.trim(), description.trim()]
+      `INSERT INTO subcategories (categoryid, subcategorynameth, subcategorynameen) 
+       VALUES ($1, $2, $3) 
+       RETURNING subcategoryid as sub_category_id, categoryid as category_id, subcategorynameth as sub_category_name_th, subcategorynameen as sub_category_name_en`,
+      [parseInt(category_id), sub_category_name_th.trim(), sub_category_name_en.trim()]
     );
 
     return NextResponse.json({
@@ -145,10 +119,10 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sub_category_id, category_id, sub_category_name, description } = body;
+    const { sub_category_id, category_id, sub_category_name_th, sub_category_name_en } = body;
 
     // Validate required fields
-    if (!sub_category_id || sub_category_id.trim() === '') {
+    if (!sub_category_id) {
       return NextResponse.json(
         { success: false, error: 'Subcategory ID is required' },
         { status: 400 }
@@ -162,24 +136,24 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    if (!sub_category_name || sub_category_name.trim() === '') {
+    if (!sub_category_name_th || sub_category_name_th.trim() === '') {
       return NextResponse.json(
-        { success: false, error: 'Subcategory name is required' },
+        { success: false, error: 'Subcategory name (Thai) is required' },
         { status: 400 }
       );
     }
 
-    if (!description || description.trim() === '') {
+    if (!sub_category_name_en || sub_category_name_en.trim() === '') {
       return NextResponse.json(
-        { success: false, error: 'Description is required' },
+        { success: false, error: 'Subcategory name (English) is required' },
         { status: 400 }
       );
     }
 
     // Check if subcategory exists
     const existingSubcategory = await query(
-      'SELECT sub_category_id FROM sub_categories WHERE sub_category_id = $1',
-      [sub_category_id.trim().toUpperCase()]
+      'SELECT subcategoryid FROM subcategories WHERE subcategoryid = $1',
+      [parseInt(sub_category_id)]
     );
 
     if (existingSubcategory.rows.length === 0) {
@@ -191,7 +165,7 @@ export async function PUT(request: NextRequest) {
 
     // Check if category exists
     const categoryExists = await query(
-      'SELECT category_id FROM categories WHERE category_id = $1',
+      'SELECT categoryid FROM categories WHERE categoryid = $1',
       [parseInt(category_id)]
     );
 
@@ -204,11 +178,11 @@ export async function PUT(request: NextRequest) {
 
     // Update subcategory
     const result = await query(
-      `UPDATE sub_categories 
-       SET category_id = $1, sub_category_name = $2, description = $3
-       WHERE sub_category_id = $4
-       RETURNING sub_category_id, category_id, sub_category_name, description`,
-      [parseInt(category_id), sub_category_name.trim(), description.trim(), sub_category_id.trim().toUpperCase()]
+      `UPDATE subcategories 
+       SET categoryid = $1, subcategorynameth = $2, subcategorynameen = $3
+       WHERE subcategoryid = $4
+       RETURNING subcategoryid as sub_category_id, categoryid as category_id, subcategorynameth as sub_category_name_th, subcategorynameen as sub_category_name_en`,
+      [parseInt(category_id), sub_category_name_th.trim(), sub_category_name_en.trim(), parseInt(sub_category_id)]
     );
 
     return NextResponse.json({
@@ -245,8 +219,8 @@ export async function DELETE(request: NextRequest) {
 
     // Check if subcategory exists
     const existingSubcategory = await query(
-      'SELECT sub_category_id FROM sub_categories WHERE sub_category_id = $1',
-      [sub_category_id.toUpperCase()]
+      'SELECT subcategoryid FROM subcategories WHERE subcategoryid = $1',
+      [parseInt(sub_category_id)]
     );
 
     if (existingSubcategory.rows.length === 0) {
@@ -258,8 +232,8 @@ export async function DELETE(request: NextRequest) {
 
     // Block deletion if any products reference this subcategory
     const prodCountRes = await query(
-      'SELECT COUNT(1) AS cnt FROM products WHERE sub_category_id = $1',
-      [sub_category_id.toUpperCase()]
+      'SELECT COUNT(1) AS cnt FROM products WHERE subcategoryid = $1',
+      [parseInt(sub_category_id)]
     );
     const prodCount = Number(prodCountRes.rows?.[0]?.cnt || 0);
     if (prodCount > 0) {
@@ -275,8 +249,8 @@ export async function DELETE(request: NextRequest) {
 
     // Delete subcategory
     await query(
-      'DELETE FROM sub_categories WHERE sub_category_id = $1',
-      [sub_category_id.toUpperCase()]
+      'DELETE FROM subcategories WHERE subcategoryid = $1',
+      [parseInt(sub_category_id)]
     );
 
     return NextResponse.json({

@@ -3,7 +3,7 @@ import { query } from '../../../database/connection';
 
 type DbProduct = {
   product_id: number;
-  sub_category_id: string | null;
+  sub_category_id: number | null;
   product_name_th: string;
   product_name_en: string;
   description: string | null;
@@ -31,16 +31,28 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 30)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
+    const categoryIdParam = searchParams.get('category_id');
 
-    // Fetch products with subcategory name (use redesigned columns)
+    // Fetch products with optional filter by category (via subcategories.categoryid)
+    const params: any[] = [];
+    let whereSql = '';
+    if (categoryIdParam) {
+      whereSql = 'WHERE sc.categoryid = $1';
+      params.push(Number(categoryIdParam));
+    }
+
+    // limit/offset are always last two params
+    params.push(limit, offset);
+
     const productsRes = await query(
-      `SELECT p.product_id, p.sub_category_id, p.product_name_th, p.product_name_en, p.description, p.base_sku, p.base_price,
-              sc.sub_category_name
+      `SELECT p.productid as product_id, p.subcategoryid as sub_category_id, p.productnameth as product_name_th, p.productnameen as product_name_en, p.description, p.basesku as base_sku, p.baseprice as base_price,
+              sc.subcategorynameth as sub_category_name
        FROM products p
-       LEFT JOIN sub_categories sc ON sc.sub_category_id = p.sub_category_id
-       ORDER BY p.product_id
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
+       LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
+       ${whereSql}
+       ORDER BY p.productid
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
     );
 
     const products = productsRes.rows as unknown as DbProduct[];
@@ -50,16 +62,16 @@ export async function GET(req: NextRequest) {
 
     const productIds = products.map((p) => p.product_id);
 
-    // Fetch variants for these products; join attribute values and attributes for labels
+    // Fetch variants for these products; join attribute values and attributes for labels - using lowercase column names without underscores
     const variantsRes = await query(
-      `SELECT pv.variant_id, pv.product_id, pv.attribute_value_id, pv.sku, pv.price, pv.image_url, pv.is_active,
-              av.attribute_value_th, av.attribute_value_en,
-              a.attribute_name_th, a.attribute_name_en
-       FROM product_variants pv
-       JOIN attribute_values av ON av.attribute_value_id = pv.attribute_value_id
-       JOIN attributes a ON a.attribute_id = av.attribute_id
-       WHERE pv.product_id = ANY($1::int[])
-       ORDER BY pv.product_id, pv.variant_id`,
+      `SELECT pv.variantid as variant_id, pv.productid as product_id, pv.attributevalueid as attribute_value_id, pv.sku, pv.price, NULL as image_url, pv.isactive as is_active,
+              av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en,
+              a.attributenameth as attribute_name_th, a.attributenameen as attribute_name_en
+       FROM productvariants pv
+       JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
+       JOIN attributes a ON a.attributeid = av.attributeid
+       WHERE pv.productid = ANY($1::int[])
+       ORDER BY pv.productid, pv.variantid`,
       [productIds]
     );
 
@@ -99,6 +111,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    console.log('🔍 DEBUG: Received POST request body:', body);
     const {
       sub_category_id = null,
       product_name_th,
@@ -108,23 +121,100 @@ export async function POST(req: NextRequest) {
       base_price,
     } = body || {};
 
-    if (!product_name_th || !product_name_en) {
-      return NextResponse.json({ ok: false, error: 'product_name_th and product_name_en are required' }, { status: 400 });
-    }
-    if (base_price === undefined || base_price === null || Number.isNaN(Number(base_price))) {
-      return NextResponse.json({ ok: false, error: 'base_price is required and must be a number' }, { status: 400 });
-    }
+    // COMMENTED OUT ALL VALIDATIONS FOR DEBUGGING
+    // if (!product_name_th || !product_name_en) {
+    //   return NextResponse.json({ ok: false, error: 'product_name_th and product_name_en are required' }, { status: 400 });
+    // }
+    // if (base_price === undefined || base_price === null || Number.isNaN(Number(base_price))) {
+    //   return NextResponse.json({ ok: false, error: 'base_price is required and must be a number' }, { status: 400 });
+    // }
 
-    const insertRes = await query(
-      `INSERT INTO products (sub_category_id, product_name_th, product_name_en, description, base_sku, base_price)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING product_id`,
-      [sub_category_id, product_name_th, product_name_en, description, base_sku, Number(base_price)]
-    );
+    const coercedBasePrice = Number(base_price || 0);
+    // if (coercedBasePrice < 0) {
+    //   return NextResponse.json({ ok: false, error: 'base_price must be >= 0' }, { status: 400 });
+    // }
 
-    const newId = insertRes.rows[0]?.product_id;
-    return NextResponse.json({ ok: true, id: newId });
+    const trimmedSku = typeof base_sku === 'string' ? base_sku.trim() : base_sku;
+    // if (trimmedSku && trimmedSku.length > 10) {
+    //   return NextResponse.json({ ok: false, error: 'base_sku must be at most 10 characters' }, { status: 400 });
+    // }
+
+    // Convert sub_category_id to number or null
+    let coercedSubCategoryId: number | null = null;
+    if (sub_category_id !== null && sub_category_id !== undefined && sub_category_id !== '') {
+      const numValue = Number(sub_category_id);
+      if (!Number.isNaN(numValue)) {
+        coercedSubCategoryId = numValue;
+      } else {
+        console.warn('⚠️ WARNING: sub_category_id is not a valid number:', sub_category_id);
+        coercedSubCategoryId = null;
+      }
+    }
+    
+    console.log('🔍 DEBUG: Sub Category ID in API:', {
+      received: sub_category_id,
+      type: typeof sub_category_id,
+      coerced: coercedSubCategoryId,
+      isNull: coercedSubCategoryId === null
+    });
+
+    try {
+      const insertValues = [coercedSubCategoryId, product_name_th, product_name_en, description, trimmedSku ?? null, coercedBasePrice];
+      console.log('🔍 DEBUG: Insert values:', insertValues);
+      const insertRes = await query(
+        `INSERT INTO products (subcategoryid, productnameth, productnameen, description, basesku, baseprice)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING productid as product_id`,
+        insertValues
+      );
+
+      const newId = insertRes.rows[0]?.product_id;
+      console.log('✅ SUCCESS: Product inserted with ID:', newId);
+      return NextResponse.json({ ok: true, id: newId });
+    } catch (dbError: any) {
+      console.error('❌ DATABASE ERROR:', dbError);
+      console.error('❌ Error code:', dbError?.code);
+      console.error('❌ Error message:', dbError?.message);
+      console.error('❌ Error detail:', dbError?.detail);
+      console.error('❌ Error constraint:', dbError?.constraint);
+      console.error('❌ Full error:', JSON.stringify(dbError, null, 2));
+      
+      // Map common Postgres errors to friendly messages
+      const code = dbError?.code;
+      if (code === '23505') {
+        return NextResponse.json({ 
+          ok: false, 
+          error: 'Duplicate value violates unique constraint (likely base_sku already exists)',
+          detail: dbError?.detail || 'A product with this SKU may already exist'
+        }, { status: 409 });
+      }
+      if (code === '23503') {
+        // Foreign key constraint violation
+        const constraint = dbError?.constraint || '';
+        const detail = dbError?.detail || '';
+        let errorMessage = 'Invalid sub_category_id (foreign key not found)';
+        if (constraint.includes('subcategoryid') || detail.includes('subcategoryid')) {
+          errorMessage = `Subcategory ID ${coercedSubCategoryId} does not exist in the database. Please select a valid subcategory.`;
+        }
+        return NextResponse.json({ 
+          ok: false, 
+          error: errorMessage,
+          detail: detail,
+          constraint: constraint,
+          sub_category_id_attempted: coercedSubCategoryId
+        }, { status: 400 });
+      }
+      if (code === '23514') {
+        return NextResponse.json({ 
+          ok: false, 
+          error: 'Constraint violated (check your inputs, e.g., base_price must be >= 0)',
+          detail: dbError?.detail || ''
+        }, { status: 400 });
+      }
+      throw dbError;
+    }
   } catch (error: any) {
+    console.error('❌ GENERAL ERROR:', error);
     const message = error?.message || 'Unknown error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
@@ -143,6 +233,16 @@ export async function PUT(req: NextRequest) {
     const values: any[] = [];
     let idx = 1;
 
+    // Map frontend field names to database column names (lowercase without underscores)
+    const fieldMapping: Record<string, string> = {
+      sub_category_id: 'subcategoryid',
+      product_name_th: 'productnameth',
+      product_name_en: 'productnameen',
+      description: 'description',
+      base_sku: 'basesku',
+      base_price: 'baseprice',
+    };
+
     const updatable = {
       sub_category_id: body?.sub_category_id,
       product_name_th: body?.product_name_th,
@@ -154,7 +254,8 @@ export async function PUT(req: NextRequest) {
 
     for (const [key, value] of Object.entries(updatable)) {
       if (value !== undefined) {
-        fields.push(`${key} = $${idx++}`);
+        const dbColumnName = fieldMapping[key] || key;
+        fields.push(`${dbColumnName} = $${idx++}`);
         values.push(value);
       }
     }
@@ -164,7 +265,7 @@ export async function PUT(req: NextRequest) {
     }
 
     values.push(product_id);
-    const sql = `UPDATE products SET ${fields.join(', ')} WHERE product_id = $${idx}`;
+    const sql = `UPDATE products SET ${fields.join(', ')} WHERE productid = $${idx}`;
     await query(sql, values);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
@@ -190,7 +291,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'product_id is required' }, { status: 400 });
     }
 
-    await query(`DELETE FROM products WHERE product_id = $1`, [product_id]);
+    await query(`DELETE FROM products WHERE productid = $1`, [product_id]);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     const message = error?.message || 'Unknown error';

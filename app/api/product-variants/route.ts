@@ -18,22 +18,23 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 30)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
 
+    // Using lowercase column names without underscores
     let sql = `
-      SELECT pv.variant_id, pv.product_id, pv.attribute_value_id, pv.sku, pv.price, pv.image_url, pv.is_active,
-             av.attribute_value_th, av.attribute_value_en,
-             a.attribute_name_th, a.attribute_name_en
-      FROM product_variants pv
-      JOIN attribute_values av ON av.attribute_value_id = pv.attribute_value_id
-      JOIN attributes a ON a.attribute_id = av.attribute_id
+      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.attributevalueid as attribute_value_id, pv.sku, pv.price, pv.imageurl as image_url, pv.isactive as is_active,
+             av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en,
+             a.attributenameth as attribute_name_th, a.attributenameen as attribute_name_en
+      FROM productvariants pv
+      JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
+      JOIN attributes a ON a.attributeid = av.attributeid
     `;
     
     const params: any[] = [];
     if (productId) {
-      sql += ` WHERE pv.product_id = $1`;
+      sql += ` WHERE pv.productid = $1`;
       params.push(Number(productId));
     }
     
-    sql += ` ORDER BY pv.variant_id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    sql += ` ORDER BY pv.variantid LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
     const result = await query(sql, params);
@@ -77,9 +78,9 @@ export async function POST(req: NextRequest) {
     }
 
     const insertRes = await query(
-      `INSERT INTO product_variants (product_id, attribute_value_id, sku, price, image_url, is_active)
+      `INSERT INTO productvariants (productid, attributevalueid, sku, price, imageurl, isactive)
        VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING variant_id`,
+       RETURNING variantid as variant_id`,
       [Number(product_id), attribute_value_id, sku, Number(price), image_url, is_active]
     );
 
@@ -104,6 +105,14 @@ export async function PUT(req: NextRequest) {
     const values: any[] = [];
     let idx = 1;
 
+    // Map frontend field names to database column names (without underscores)
+    const fieldMapping: Record<string, string> = {
+      sku: 'sku',
+      price: 'price',
+      image_url: 'imageurl',
+      is_active: 'isactive',
+    };
+
     const updatable = {
       sku: body?.sku,
       price: body?.price !== undefined ? Number(body?.price) : undefined,
@@ -113,7 +122,8 @@ export async function PUT(req: NextRequest) {
 
     for (const [key, value] of Object.entries(updatable)) {
       if (value !== undefined) {
-        fields.push(`${key} = $${idx++}`);
+        const dbColumnName = fieldMapping[key] || key;
+        fields.push(`${dbColumnName} = $${idx++}`);
         values.push(value);
       }
     }
@@ -123,7 +133,7 @@ export async function PUT(req: NextRequest) {
     }
 
     values.push(variant_id);
-    const sql = `UPDATE product_variants SET ${fields.join(', ')} WHERE variant_id = $${idx}`;
+    const sql = `UPDATE productvariants SET ${fields.join(', ')} WHERE variantid = $${idx}`;
     await query(sql, values);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
@@ -149,7 +159,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'variant_id is required' }, { status: 400 });
     }
 
-    await query(`DELETE FROM product_variants WHERE variant_id = $1`, [variant_id]);
+    await query(`DELETE FROM productvariants WHERE variantid = $1`, [variant_id]);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     const message = error?.message || 'Unknown error';

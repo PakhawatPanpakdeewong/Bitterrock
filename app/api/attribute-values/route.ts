@@ -14,25 +14,25 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const attributeIdParam = searchParams.get('attribute_id');
 
-    // Build base query
+    // Build base query - using lowercase table and column names without underscores
     let sql = `
       SELECT 
-        av.attribute_value_id,
-        av.attribute_id,
-        av.attribute_value_th,
-        av.attribute_value_en,
-        a.attribute_name_th,
-        a.attribute_name_en
-      FROM attribute_values av
-      LEFT JOIN attributes a ON a.attribute_id = av.attribute_id
+        av.attributevalueid as attribute_value_id,
+        av.attributeid as attribute_id,
+        av.attributevalueth as attribute_value_th,
+        av.attributevalueen as attribute_value_en,
+        a.attributenameth as attribute_name_th,
+        a.attributenameen as attribute_name_en
+      FROM attributevalues av
+      LEFT JOIN attributes a ON a.attributeid = av.attributeid
     `;
 
     const params: any[] = [];
     if (attributeIdParam) {
-      sql += ` WHERE av.attribute_id = $1`;
+      sql += ` WHERE av.attributeid = $1`;
       params.push(parseInt(attributeIdParam));
     }
-    sql += ` ORDER BY a.attribute_name_th NULLS LAST, av.attribute_value_th`;
+    sql += ` ORDER BY a.attributenameth NULLS LAST, av.attributevalueth`;
 
     const result = await query(sql, params);
 
@@ -57,16 +57,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { attribute_value_id, attribute_id, attribute_value_th, attribute_value_en } = body;
+    const { attribute_id, attribute_value_th, attribute_value_en } = body;
 
     // Validate required fields
-    if (!attribute_value_id || attribute_value_id.trim() === '') {
-      return NextResponse.json(
-        { success: false, error: 'Attribute value ID is required' },
-        { status: 400 }
-      );
-    }
-
     if (!attribute_id) {
       return NextResponse.json(
         { success: false, error: 'Attribute is required' },
@@ -88,30 +81,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate attribute value ID format (3 characters)
-    if (attribute_value_id.trim().length !== 3) {
-      return NextResponse.json(
-        { success: false, error: 'Attribute value ID must be exactly 3 characters' },
-        { status: 400 }
-      );
-    }
-
-    // Check if attribute value ID already exists
-    const existingAttributeValue = await query(
-      'SELECT attribute_value_id FROM attribute_values WHERE attribute_value_id = $1',
-      [attribute_value_id.trim().toUpperCase()]
-    );
-
-    if (existingAttributeValue.rows.length > 0) {
-      return NextResponse.json(
-        { success: false, error: 'Attribute value with this ID already exists' },
-        { status: 409 }
-      );
-    }
-
     // Check if attribute exists
     const attributeExists = await query(
-      'SELECT attribute_id FROM attributes WHERE attribute_id = $1',
+      'SELECT attributeid FROM attributes WHERE attributeid = $1',
       [parseInt(attribute_id)]
     );
 
@@ -122,12 +94,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert new attribute value
+    // Insert new attribute value (attributevalueid is SERIAL, auto-generated)
     const result = await query(
-      `INSERT INTO attribute_values (attribute_value_id, attribute_id, attribute_value_th, attribute_value_en) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING attribute_value_id, attribute_id, attribute_value_th, attribute_value_en`,
-      [attribute_value_id.trim().toUpperCase(), parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim()]
+      `INSERT INTO attributevalues (attributeid, attributevalueth, attributevalueen) 
+       VALUES ($1, $2, $3) 
+       RETURNING attributevalueid as attribute_value_id, attributeid as attribute_id, attributevalueth as attribute_value_th, attributevalueen as attribute_value_en`,
+      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim()]
     );
 
     return NextResponse.json({
@@ -156,7 +128,7 @@ export async function PUT(request: NextRequest) {
     const { attribute_value_id, attribute_id, attribute_value_th, attribute_value_en } = body;
 
     // Validate required fields
-    if (!attribute_value_id || attribute_value_id.trim() === '') {
+    if (!attribute_value_id) {
       return NextResponse.json(
         { success: false, error: 'Attribute value ID is required' },
         { status: 400 }
@@ -186,8 +158,8 @@ export async function PUT(request: NextRequest) {
 
     // Check if attribute value exists
     const existingAttributeValue = await query(
-      'SELECT attribute_value_id FROM attribute_values WHERE attribute_value_id = $1',
-      [attribute_value_id.trim().toUpperCase()]
+      'SELECT attributevalueid FROM attributevalues WHERE attributevalueid = $1',
+      [parseInt(attribute_value_id)]
     );
 
     if (existingAttributeValue.rows.length === 0) {
@@ -199,7 +171,7 @@ export async function PUT(request: NextRequest) {
 
     // Check if attribute exists
     const attributeExists = await query(
-      'SELECT attribute_id FROM attributes WHERE attribute_id = $1',
+      'SELECT attributeid FROM attributes WHERE attributeid = $1',
       [parseInt(attribute_id)]
     );
 
@@ -212,11 +184,11 @@ export async function PUT(request: NextRequest) {
 
     // Update attribute value
     const result = await query(
-      `UPDATE attribute_values 
-       SET attribute_id = $1, attribute_value_th = $2, attribute_value_en = $3
-       WHERE attribute_value_id = $4
-       RETURNING attribute_value_id, attribute_id, attribute_value_th, attribute_value_en`,
-      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim(), attribute_value_id.trim().toUpperCase()]
+      `UPDATE attributevalues 
+       SET attributeid = $1, attributevalueth = $2, attributevalueen = $3
+       WHERE attributevalueid = $4
+       RETURNING attributevalueid as attribute_value_id, attributeid as attribute_id, attributevalueth as attribute_value_th, attributevalueen as attribute_value_en`,
+      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim(), parseInt(attribute_value_id)]
     );
 
     return NextResponse.json({
@@ -253,8 +225,8 @@ export async function DELETE(request: NextRequest) {
 
     // Check if attribute value exists
     const existingAttributeValue = await query(
-      'SELECT attribute_value_id FROM attribute_values WHERE attribute_value_id = $1',
-      [attribute_value_id.toUpperCase()]
+      'SELECT attributevalueid FROM attributevalues WHERE attributevalueid = $1',
+      [parseInt(attribute_value_id)]
     );
 
     if (existingAttributeValue.rows.length === 0) {
@@ -266,8 +238,8 @@ export async function DELETE(request: NextRequest) {
 
     // Block deletion if any product variants reference this attribute value
     const variantCountRes = await query(
-      'SELECT COUNT(1) AS cnt FROM product_variants WHERE attribute_value_id = $1',
-      [attribute_value_id.toUpperCase()]
+      'SELECT COUNT(1) AS cnt FROM productvariants WHERE attributevalueid = $1',
+      [parseInt(attribute_value_id)]
     );
     const variantCount = Number(variantCountRes.rows?.[0]?.cnt || 0);
     if (variantCount > 0) {
@@ -283,8 +255,8 @@ export async function DELETE(request: NextRequest) {
 
     // Delete attribute value
     await query(
-      'DELETE FROM attribute_values WHERE attribute_value_id = $1',
-      [attribute_value_id.toUpperCase()]
+      'DELETE FROM attributevalues WHERE attributevalueid = $1',
+      [parseInt(attribute_value_id)]
     );
 
     return NextResponse.json({

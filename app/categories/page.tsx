@@ -35,10 +35,9 @@ type ApiResponse = {
 };
 
 type SubCategoryFormData = {
-  sub_category_id: string;
   category_id: string;
-  sub_category_name: string;
-  description: string;
+  sub_category_name_th: string;
+  sub_category_name_en: string;
 };
 
 type Attribute = {
@@ -48,7 +47,7 @@ type Attribute = {
 };
 
 type AttributeValue = {
-  attribute_value_id: string;
+  attribute_value_id: number;
   attribute_id: number;
   attribute_value_th: string;
   attribute_value_en: string;
@@ -60,7 +59,6 @@ type AttributeFormData = {
 };
 
 type AttributeValueFormData = {
-  attribute_value_id: string;
   attribute_id: string;
   attribute_value_th: string;
   attribute_value_en: string;
@@ -76,11 +74,13 @@ export default function CategoriesPage() {
   
   // Subcategories state and filter
   const [subCategories, setSubCategories] = useState<Array<{
-    sub_category_id: string;
-    sub_category_name: string;
-    description: string | null;
+    sub_category_id: number;
+    sub_category_name_th: string;
+    sub_category_name_en: string;
     category_id: number | null;
-    category_name: string | null;
+    category_name_th?: string | null;
+    category_name_en?: string | null;
+    category_name?: string | null;
   }>>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [subLoading, setSubLoading] = useState<boolean>(false);
@@ -116,10 +116,9 @@ export default function CategoriesPage() {
 
   // Form states for subcategories
   const [subFormData, setSubFormData] = useState<SubCategoryFormData>({
-    sub_category_id: '',
     category_id: '',
-    sub_category_name: '',
-    description: ''
+    sub_category_name_th: '',
+    sub_category_name_en: ''
   });
   const [subFormErrors, setSubFormErrors] = useState<Partial<SubCategoryFormData>>({});
   const [isSubSubmitting, setIsSubSubmitting] = useState(false);
@@ -135,7 +134,6 @@ export default function CategoriesPage() {
 
   // Form states for attribute values
   const [attrValueFormData, setAttrValueFormData] = useState<AttributeValueFormData>({
-    attribute_value_id: '',
     attribute_id: '',
     attribute_value_th: '',
     attribute_value_en: ''
@@ -243,22 +241,16 @@ export default function CategoriesPage() {
   const validateSubForm = (): boolean => {
     const errors: Partial<SubCategoryFormData> = {};
     
-    if (!subFormData.sub_category_id.trim()) {
-      errors.sub_category_id = 'รหัสหมวดย่อยจำเป็นต้องกรอก';
-    } else if (subFormData.sub_category_id.trim().length !== 3) {
-      errors.sub_category_id = 'รหัสหมวดย่อยต้องมี 3 ตัวอักษร';
-    }
-    
     if (!subFormData.category_id) {
       errors.category_id = 'ประเภทหลักจำเป็นต้องเลือก';
     }
     
-    if (!subFormData.sub_category_name.trim()) {
-      errors.sub_category_name = 'ชื่อหมวดย่อยจำเป็นต้องกรอก';
+    if (!subFormData.sub_category_name_th.trim()) {
+      errors.sub_category_name_th = 'ชื่อหมวดย่อย (ไทย) จำเป็นต้องกรอก';
     }
     
-    if (!subFormData.description.trim()) {
-      errors.description = 'คำอธิบายจำเป็นต้องกรอก';
+    if (!subFormData.sub_category_name_en.trim()) {
+      errors.sub_category_name_en = 'ชื่อหมวดย่อย (อังกฤษ) จำเป็นต้องกรอก';
     }
     
     setSubFormErrors(errors);
@@ -267,10 +259,9 @@ export default function CategoriesPage() {
 
   const resetSubForm = () => {
     setSubFormData({
-      sub_category_id: '',
       category_id: '',
-      sub_category_name: '',
-      description: ''
+      sub_category_name_th: '',
+      sub_category_name_en: ''
     });
     setSubFormErrors({});
   };
@@ -315,7 +306,10 @@ export default function CategoriesPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(subFormData),
+        body: JSON.stringify({
+          sub_category_id: editingSubcategory.sub_category_id,
+          ...subFormData
+        }),
       });
 
       const result = await response.json();
@@ -365,10 +359,9 @@ export default function CategoriesPage() {
   const openEditSubModal = (subcategory: any) => {
     setEditingSubcategory(subcategory);
     setSubFormData({
-      sub_category_id: subcategory.sub_category_id,
       category_id: String(subcategory.category_id),
-      sub_category_name: subcategory.sub_category_name,
-      description: subcategory.description || ''
+      sub_category_name_th: subcategory.sub_category_name_th || '',
+      sub_category_name_en: subcategory.sub_category_name_en || ''
     });
     setSubFormErrors({});
     setIsEditSubModalOpen(true);
@@ -392,7 +385,6 @@ export default function CategoriesPage() {
   const openEditAttrValueModal = (attributeValue: any) => {
     setEditingAttributeValue(attributeValue);
     setAttrValueFormData({
-      attribute_value_id: attributeValue.attribute_value_id,
       attribute_id: String(attributeValue.attribute_id),
       attribute_value_th: attributeValue.attribute_value_th,
       attribute_value_en: attributeValue.attribute_value_en
@@ -403,7 +395,6 @@ export default function CategoriesPage() {
 
   const resetAttrValueForm = () => {
     setAttrValueFormData({
-      attribute_value_id: '',
       attribute_id: '',
       attribute_value_th: '',
       attribute_value_en: ''
@@ -422,12 +413,6 @@ export default function CategoriesPage() {
 
   const validateAttrValueForm = (): boolean => {
     const errors: Partial<AttributeValueFormData> = {};
-    
-    if (!attrValueFormData.attribute_value_id.trim()) {
-      errors.attribute_value_id = 'รหัสค่าคุณสมบัติจำเป็นต้องกรอก';
-    } else if (attrValueFormData.attribute_value_id.trim().length !== 3) {
-      errors.attribute_value_id = 'รหัสค่าคุณสมบัติต้องมี 3 ตัวอักษร';
-    }
     
     if (!attrValueFormData.attribute_id) {
       errors.attribute_id = 'คุณสมบัติจำเป็นต้องเลือก';
@@ -485,7 +470,10 @@ export default function CategoriesPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(attrValueFormData),
+        body: JSON.stringify({
+          attribute_value_id: editingAttributeValue.attribute_value_id,
+          ...attrValueFormData
+        }),
       });
 
       const result = await response.json();
@@ -644,7 +632,7 @@ export default function CategoriesPage() {
                     <SelectItem value="all">ทั้งหมด</SelectItem>
                     {categories.map((c) => (
                       <SelectItem key={c.category_id} value={String(c.category_id)}>
-                        {c.category_name}
+                        {(c as any).category_name_th || c.category_name || 'Unnamed'}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -664,10 +652,10 @@ export default function CategoriesPage() {
                 <Table className="min-w-[800px]">
                   <THead>
                     <TR>
-                      <TH>รหัสย่อย</TH>
-                      <TH>ชื่อหมวดย่อย</TH>
+                      <TH>รหัส</TH>
+                      <TH>ชื่อหมวดย่อย (ไทย)</TH>
+                      <TH>ชื่อหมวดย่อย (อังกฤษ)</TH>
                       <TH>ประเภทหลัก</TH>
-                      <TH>คำอธิบาย</TH>
                     </TR>
                   </THead>
                   <TBody>
@@ -685,9 +673,9 @@ export default function CategoriesPage() {
                         className={isEditMode ? 'cursor-pointer hover:bg-accent/40' : ''}
                       >
                         <TD>{sc.sub_category_id}</TD>
-                        <TD>{sc.sub_category_name}</TD>
-                        <TD>{sc.category_name}</TD>
-                        <TD>{sc.description}</TD>
+                        <TD>{sc.sub_category_name_th}</TD>
+                        <TD>{sc.sub_category_name_en}</TD>
+                        <TD>{sc.category_name_th || sc.category_name || 'N/A'}</TD>
                       </TR>
                     ))
                     )}
@@ -737,7 +725,7 @@ export default function CategoriesPage() {
                 <Table className="min-w-[800px]">
                   <THead>
                     <TR>
-                      <TH>รหัสค่า</TH>
+                      <TH>รหัส</TH>
                       <TH>ค่าคุณสมบัติ (ไทย)</TH>
                       <TH>ค่าคุณสมบัติ (อังกฤษ)</TH>
                       <TH>คุณสมบัติ</TH>
@@ -785,20 +773,6 @@ export default function CategoriesPage() {
       >
         <div className="space-y-4">
           <div>
-            <Label htmlFor="sub_category_id">รหัสหมวดย่อย (3 ตัวอักษร) *</Label>
-            <Input
-              id="sub_category_id"
-              value={subFormData.sub_category_id}
-              onChange={(e) => setSubFormData({ ...subFormData, sub_category_id: e.target.value.toUpperCase() })}
-              placeholder="เช่น BBR, DIA, HMT"
-              maxLength={3}
-              className={subFormErrors.sub_category_id ? 'border-red-500' : ''}
-            />
-            {subFormErrors.sub_category_id && (
-              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_id}</p>
-            )}
-          </div>
-          <div>
             <Label htmlFor="category_id">ประเภทหลัก *</Label>
             <Select 
               value={subFormData.category_id} 
@@ -820,30 +794,29 @@ export default function CategoriesPage() {
             )}
           </div>
           <div>
-            <Label htmlFor="sub_category_name">ชื่อหมวดย่อย *</Label>
+            <Label htmlFor="sub_category_name_th">ชื่อหมวดย่อย (ไทย) *</Label>
             <Input
-              id="sub_category_name"
-              value={subFormData.sub_category_name}
-              onChange={(e) => setSubFormData({ ...subFormData, sub_category_name: e.target.value })}
-              placeholder="กรอกชื่อหมวดย่อย"
-              className={subFormErrors.sub_category_name ? 'border-red-500' : ''}
+              id="sub_category_name_th"
+              value={subFormData.sub_category_name_th}
+              onChange={(e) => setSubFormData({ ...subFormData, sub_category_name_th: e.target.value })}
+              placeholder="กรอกชื่อหมวดย่อยภาษาไทย"
+              className={subFormErrors.sub_category_name_th ? 'border-red-500' : ''}
             />
-            {subFormErrors.sub_category_name && (
-              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_name}</p>
+            {subFormErrors.sub_category_name_th && (
+              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_name_th}</p>
             )}
           </div>
           <div>
-            <Label htmlFor="description">คำอธิบาย *</Label>
-            <Textarea
-              id="description"
-              value={subFormData.description}
-              onChange={(e) => setSubFormData({ ...subFormData, description: e.target.value })}
-              placeholder="กรอกคำอธิบายหมวดย่อย"
-              rows={3}
-              className={subFormErrors.description ? 'border-red-500' : ''}
+            <Label htmlFor="sub_category_name_en">ชื่อหมวดย่อย (อังกฤษ) *</Label>
+            <Input
+              id="sub_category_name_en"
+              value={subFormData.sub_category_name_en}
+              onChange={(e) => setSubFormData({ ...subFormData, sub_category_name_en: e.target.value })}
+              placeholder="กรอกชื่อหมวดย่อยภาษาอังกฤษ"
+              className={subFormErrors.sub_category_name_en ? 'border-red-500' : ''}
             />
-            {subFormErrors.description && (
-              <p className="text-red-500 text-sm mt-1">{subFormErrors.description}</p>
+            {subFormErrors.sub_category_name_en && (
+              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_name_en}</p>
             )}
           </div>
           <div className="flex justify-end gap-2">
@@ -872,7 +845,7 @@ export default function CategoriesPage() {
             <Label htmlFor="edit_sub_category_id">รหัสหมวดย่อย (ไม่สามารถแก้ไขได้)</Label>
             <Input
               id="edit_sub_category_id"
-              value={subFormData.sub_category_id}
+              value={editingSubcategory?.sub_category_id || ''}
               disabled
               className="bg-gray-100"
             />
@@ -899,30 +872,29 @@ export default function CategoriesPage() {
             )}
           </div>
           <div>
-            <Label htmlFor="edit_sub_category_name">ชื่อหมวดย่อย *</Label>
+            <Label htmlFor="edit_sub_category_name_th">ชื่อหมวดย่อย (ไทย) *</Label>
             <Input
-              id="edit_sub_category_name"
-              value={subFormData.sub_category_name}
-              onChange={(e) => setSubFormData({ ...subFormData, sub_category_name: e.target.value })}
-              placeholder="กรอกชื่อหมวดย่อย"
-              className={subFormErrors.sub_category_name ? 'border-red-500' : ''}
+              id="edit_sub_category_name_th"
+              value={subFormData.sub_category_name_th}
+              onChange={(e) => setSubFormData({ ...subFormData, sub_category_name_th: e.target.value })}
+              placeholder="กรอกชื่อหมวดย่อยภาษาไทย"
+              className={subFormErrors.sub_category_name_th ? 'border-red-500' : ''}
             />
-            {subFormErrors.sub_category_name && (
-              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_name}</p>
+            {subFormErrors.sub_category_name_th && (
+              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_name_th}</p>
             )}
           </div>
           <div>
-            <Label htmlFor="edit_description">คำอธิบาย *</Label>
-            <Textarea
-              id="edit_description"
-              value={subFormData.description}
-              onChange={(e) => setSubFormData({ ...subFormData, description: e.target.value })}
-              placeholder="กรอกคำอธิบายหมวดย่อย"
-              rows={3}
-              className={subFormErrors.description ? 'border-red-500' : ''}
+            <Label htmlFor="edit_sub_category_name_en">ชื่อหมวดย่อย (อังกฤษ) *</Label>
+            <Input
+              id="edit_sub_category_name_en"
+              value={subFormData.sub_category_name_en}
+              onChange={(e) => setSubFormData({ ...subFormData, sub_category_name_en: e.target.value })}
+              placeholder="กรอกชื่อหมวดย่อยภาษาอังกฤษ"
+              className={subFormErrors.sub_category_name_en ? 'border-red-500' : ''}
             />
-            {subFormErrors.description && (
-              <p className="text-red-500 text-sm mt-1">{subFormErrors.description}</p>
+            {subFormErrors.sub_category_name_en && (
+              <p className="text-red-500 text-sm mt-1">{subFormErrors.sub_category_name_en}</p>
             )}
           </div>
           <div className="flex justify-end gap-2">
@@ -959,7 +931,7 @@ export default function CategoriesPage() {
       >
         <div className="space-y-4">
           <p className="text-gray-700">
-            คุณแน่ใจหรือไม่ที่จะลบหมวดย่อย <strong>"{deletingSubcategory?.sub_category_name}"</strong> (รหัส: {deletingSubcategory?.sub_category_id})?
+            คุณแน่ใจหรือไม่ที่จะลบหมวดย่อย <strong>"{deletingSubcategory?.sub_category_name_th || deletingSubcategory?.sub_category_name_en}"</strong> (รหัส: {deletingSubcategory?.sub_category_id})?
           </p>
           <p className="text-sm text-red-600">
             การดำเนินการนี้ไม่สามารถยกเลิกได้
@@ -986,20 +958,6 @@ export default function CategoriesPage() {
         title="เพิ่มค่าคุณสมบัติใหม่"
       >
         <div className="space-y-4">
-          <div>
-            <Label htmlFor="attribute_value_id">รหัสค่าคุณสมบัติ (3 ตัวอักษร) *</Label>
-            <Input
-              id="attribute_value_id"
-              value={attrValueFormData.attribute_value_id}
-              onChange={(e) => setAttrValueFormData({ ...attrValueFormData, attribute_value_id: e.target.value.toUpperCase() })}
-              placeholder="เช่น RED, BLU, SML"
-              maxLength={3}
-              className={attrValueFormErrors.attribute_value_id ? 'border-red-500' : ''}
-            />
-            {attrValueFormErrors.attribute_value_id && (
-              <p className="text-red-500 text-sm mt-1">{attrValueFormErrors.attribute_value_id}</p>
-            )}
-          </div>
           <div>
             <Label htmlFor="attribute_id">คุณสมบัติ *</Label>
             <Select 
@@ -1073,7 +1031,7 @@ export default function CategoriesPage() {
             <Label htmlFor="edit_attribute_value_id">รหัสค่าคุณสมบัติ (ไม่สามารถแก้ไขได้)</Label>
             <Input
               id="edit_attribute_value_id"
-              value={attrValueFormData.attribute_value_id}
+              value={editingAttributeValue?.attribute_value_id || ''}
               disabled
               className="bg-gray-100"
             />

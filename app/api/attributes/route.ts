@@ -19,11 +19,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const includeValues = searchParams.get('include_values') === 'true';
 
-    // Fetch attributes
+    // Fetch attributes - using lowercase column names without underscores
     const attributesRes = await query(
-      `SELECT attribute_id, attribute_name_th, attribute_name_en
+      `SELECT attributeid as attribute_id, attributenameth as attribute_name_th, attributenameen as attribute_name_en
        FROM attributes
-       ORDER BY attribute_name_th`,
+       ORDER BY attributenameth`,
       []
     );
 
@@ -33,11 +33,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, items: attributes });
     }
 
-    // Fetch attribute values if requested
+    // Fetch attribute values if requested - using lowercase table and column names without underscores
     const valuesRes = await query(
-      `SELECT av.attribute_value_id, av.attribute_id, av.attribute_value_th, av.attribute_value_en
-       FROM attribute_values av
-       ORDER BY av.attribute_id, av.attribute_value_th`,
+      `SELECT av.attributevalueid as attribute_value_id, av.attributeid as attribute_id, av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en
+       FROM attributevalues av
+       ORDER BY av.attributeid, av.attributevalueth`,
       []
     );
 
@@ -74,9 +74,9 @@ export async function POST(req: NextRequest) {
     }
 
     const insertRes = await query(
-      `INSERT INTO attributes (attribute_name_th, attribute_name_en)
+      `INSERT INTO attributes (attributenameth, attributenameen)
        VALUES ($1, $2)
-       RETURNING attribute_id`,
+       RETURNING attributeid as attribute_id`,
       [attribute_name_th.trim(), attribute_name_en.trim()]
     );
 

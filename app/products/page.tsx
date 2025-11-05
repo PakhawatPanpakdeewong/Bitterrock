@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { ResponsiveImage } from "@/components/ui/responsive-image";
-import { Grid, List, RefreshCw } from "lucide-react";
+import { Grid, List, RefreshCw, Search, Plus, Pencil } from "lucide-react";
 
 type Variant = {
   variant_id: number;
@@ -96,14 +96,28 @@ export default function ProductsPage() {
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({}); // attribute_id -> attribute_value_id
   const [attributesLoading, setAttributesLoading] = useState<boolean>(false);
   const [attributesError, setAttributesError] = useState<string | null>(null);
+  // Filter state
+  const [filterCategoryId, setFilterCategoryId] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
       try {
+        // ensure categories for filter
+        const catsRes = await fetch('/api/categories');
+        const catsJson = await catsRes.json();
+        if (catsJson?.success && Array.isArray(catsJson.data)) {
+          setCategories(catsJson.data);
+        }
+
+        const productsUrl = (filterCategoryId && filterCategoryId !== 'all')
+          ? `/api/products?limit=30&category_id=${encodeURIComponent(filterCategoryId)}`
+          : "/api/products?limit=30";
+
         const [imgRes, prodRes] = await Promise.all([
           fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
-          fetch("/api/products?limit=30", { cache: "no-store" }),
+          fetch(productsUrl, { cache: "no-store" }),
         ]);
         const imgData = await imgRes.json();
         const prodData = await prodRes.json();
@@ -123,7 +137,7 @@ export default function ProductsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [filterCategoryId]);
 
   // Load category/subcategory when create modal opens or category changes
   useEffect(() => {
@@ -178,9 +192,13 @@ export default function ProductsPage() {
       setBusy(true);
       setError(null);
       
+      const productsUrl = (filterCategoryId && filterCategoryId !== 'all')
+        ? `/api/products?limit=30&category_id=${encodeURIComponent(filterCategoryId)}`
+        : "/api/products?limit=30";
+
       const [imgRes, prodRes] = await Promise.all([
         fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
-        fetch("/api/products?limit=30", { cache: "no-store" }),
+        fetch(productsUrl, { cache: "no-store" }),
       ]);
       
       const imgData = await imgRes.json();
@@ -224,30 +242,51 @@ export default function ProductsPage() {
         imageUrl = uploadData.url;
       }
       
+      // Convert sub_category_id to number or null
+      const rawSubCategoryId = createForm.sub_category_id || selectedSubCategoryId || '';
+      const subCategoryIdValue = rawSubCategoryId && String(rawSubCategoryId).trim() !== '' 
+        ? Number(String(rawSubCategoryId).trim()) 
+        : null;
+      
+      console.log('🔍 DEBUG: Sub Category ID conversion:', {
+        raw: rawSubCategoryId,
+        string: String(rawSubCategoryId),
+        trimmed: String(rawSubCategoryId).trim(),
+        final: subCategoryIdValue,
+        isNaN: subCategoryIdValue !== null && Number.isNaN(subCategoryIdValue)
+      });
+
       const payload = {
-        product_name_th: createForm.product_name_th.trim(),
-        product_name_en: createForm.product_name_en.trim(),
+        product_name_th: createForm.product_name_th?.trim() || '',
+        product_name_en: createForm.product_name_en?.trim() || '',
         base_price: Number(createForm.base_price || 0),
-        base_sku: baseSku,
-        description: createForm.description.trim() || null,
-        sub_category_id: (createForm.sub_category_id || selectedSubCategoryId || '').trim() || null,
+        base_sku: baseSku || null,
+        description: createForm.description?.trim() || null,
+        sub_category_id: subCategoryIdValue,
       };
-      if (!selectedCategoryId || !selectedSubCategoryId) {
-        throw new Error("กรุณาเลือกประเภทและหมวดย่อยก่อน");
-      }
-      if (!payload.product_name_th || !payload.product_name_en) {
-        throw new Error("กรุณากรอกชื่อสินค้า (TH/EN)");
-      }
-      if (payload.product_name_en.length < 3) {
-        throw new Error("ชื่อสินค้า (EN) ต้องมีอย่างน้อย 3 ตัวอักษรเพื่อสร้าง Base SKU");
-      }
+      // COMMENTED OUT ALL VALIDATIONS FOR DEBUGGING
+      // if (!selectedCategoryId || !selectedSubCategoryId) {
+      //   throw new Error("กรุณาเลือกประเภทและหมวดย่อยก่อน");
+      // }
+      // if (!payload.product_name_th || !payload.product_name_en) {
+      //   throw new Error("กรุณากรอกชื่อสินค้า (TH/EN)");
+      // }
+      // if (payload.product_name_en.length < 3) {
+      //   throw new Error("ชื่อสินค้า (EN) ต้องมีอย่างน้อย 3 ตัวอักษรเพื่อสร้าง Base SKU");
+      // }
+      console.log('🔍 DEBUG: Sending payload to API:', payload);
       const res = await fetch("/api/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error || "สร้างสินค้าไม่สำเร็จ");
+      console.log('🔍 DEBUG: API Response:', data);
+      if (!data.ok) {
+        console.error('❌ ERROR: API returned error:', data.error);
+        throw new Error(data.error || "สร้างสินค้าไม่สำเร็จ");
+      }
+      console.log('✅ SUCCESS: Product created with ID:', data.id);
       
       // If product created successfully and we have selected attributes, create variants
       if (data.id && Object.keys(selectedAttributes).some(key => selectedAttributes[key])) {
@@ -257,10 +296,14 @@ export default function ProductsPage() {
         if (selectedAttributeValues.length > 0) {
           // Create a variant for each selected attribute value
           for (const attributeValueId of selectedAttributeValues) {
+            const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(selectedSubCategoryId));
+            const subName = subCategory?.sub_category_name || "";
+            const alphaFromSub = (subName.replace(/[^A-Za-z]/g, "").toUpperCase() + "XXX").slice(0, 3);
+            const productPrefix = createForm.product_name_en.substring(0, 3).toUpperCase();
             const variantPayload = {
               product_id: productId,
               attribute_value_id: attributeValueId,
-              sku: `${selectedSubCategoryId}-${createForm.product_name_en.substring(0, 3).toUpperCase()}-${attributeValueId}`,
+              sku: `${alphaFromSub}-${productPrefix}-${attributeValueId}`,
               price: Number(createForm.base_price || 0),
               image_url: null,
               is_active: true
@@ -314,31 +357,35 @@ export default function ProductsPage() {
   };
 
   // Generate BASE SKU prefix (XXX-XXX) for Step 2 preview
-  const generateBaseSkuPrefix = (subCategoryId: string, productNameEn: string) => {
-    if (!subCategoryId || !productNameEn || productNameEn.length < 3) return "";
-    
-    // Take first 3 characters of subcategory and product name
-    const categoryPrefix = subCategoryId.substring(0, 3).toUpperCase();
-    const productPrefix = productNameEn.substring(0, 3).toUpperCase();
-    
-    return `${categoryPrefix}-${productPrefix}-`;
+  const generateBaseSkuPrefix = (subCategoryId: string | number | null | undefined, productNameEn: string | null | undefined) => {
+    const nameStr = String(productNameEn ?? "");
+    if (!subCategoryId || nameStr.length < 3) return "";
+
+    const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(subCategoryId));
+    const subName = subCategory?.sub_category_name || "";
+    const alphaFromSub = (subName.replace(/[^A-Za-z]/g, "").toUpperCase() + "XXX").slice(0, 3);
+    const productPrefix = nameStr.slice(0, 3).toUpperCase();
+
+    return `${alphaFromSub}-${productPrefix}-`;
   };
 
   // Generate complete BASE SKU in XXX-XXX-YY format (for Step 3)
-  const generateBaseSku = (subCategoryId: string, productNameEn: string) => {
-    if (!subCategoryId || !productNameEn || productNameEn.length < 3) return "";
-    
-    // Take first 3 characters of subcategory and product name
-    const categoryPrefix = subCategoryId.substring(0, 3).toUpperCase();
-    const productPrefix = productNameEn.substring(0, 3).toUpperCase();
-    
-    // Generate 2 random letters A-Z
+  const generateBaseSku = (subCategoryId: string | number | null | undefined, productNameEn: string | null | undefined) => {
+    if (!subCategoryId) return "";
+    const nameStr = String(productNameEn ?? "");
+    if (nameStr.length < 3) return "";
+
+    const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(subCategoryId));
+    const subName = subCategory?.sub_category_name || "";
+    const alphaFromSub = (subName.replace(/[^A-Za-z]/g, "").toUpperCase() + "XXX").slice(0, 3);
+    const productPrefix = nameStr.slice(0, 3).toUpperCase();
+
     const randomLetters = String.fromCharCode(
-      65 + Math.floor(Math.random() * 26), // A-Z
-      65 + Math.floor(Math.random() * 26)  // A-Z
+      65 + Math.floor(Math.random() * 26),
+      65 + Math.floor(Math.random() * 26)
     );
-    
-    return `${categoryPrefix}-${productPrefix}-${randomLetters}`;
+
+    return `${alphaFromSub}-${productPrefix}-${randomLetters}`;
   };
 
   // Handle image upload
@@ -354,25 +401,25 @@ export default function ProductsPage() {
     }
   };
 
-  // Function to find image by BASE SKU (first 8 characters only)
+  // Function to find image by BASE SKU (10 characters: XXX-YYY-ZZ format)
   const findImageBySku = (baseSku: string | null) => {
     if (!baseSku) return null;
     
-    // Take only first 8 characters of the BASE SKU
-    const skuPrefix = baseSku.substring(0, 8);
+    // Take full 10 characters of the BASE SKU (XXX-YYY-ZZ format)
+    const skuMatch = baseSku.substring(0, 10);
     
-    // Look for image with matching SKU prefix
+    // Look for image with matching SKU (exact 10 character match)
     const matchingImage = images.find(img => {
-      // Extract SKU from image key and take first 8 characters
+      // Extract SKU from image key (remove file extension)
       const imageSku = img.key.split('.')[0]; // Remove file extension
-      const imageSkuPrefix = imageSku.substring(0, 8);
-      return imageSkuPrefix === skuPrefix;
+      const imageSkuMatch = imageSku.substring(0, 10);
+      return imageSkuMatch === skuMatch;
     });
     
     if (matchingImage) {
-      console.log(`✅ Found image for SKU ${baseSku} (prefix: ${skuPrefix}): ${matchingImage.key}`);
+      console.log(`✅ Found image for SKU ${baseSku} (match: ${skuMatch}): ${matchingImage.key}`);
     } else {
-      console.log(`❌ No image found for SKU ${baseSku} (prefix: ${skuPrefix})`);
+      console.log(`❌ No image found for SKU ${baseSku} (match: ${skuMatch})`);
     }
     
     return matchingImage?.url || null;
@@ -424,59 +471,97 @@ export default function ProductsPage() {
     }
   };
 
+  // Filter products based on search query
+  const filteredProducts = serverProducts.filter((product) => {
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch = 
+        product.product_name_th?.toLowerCase().includes(query) ||
+        product.product_name_en?.toLowerCase().includes(query) ||
+        product.base_sku?.toLowerCase().includes(query);
+      if (!matchesSearch) return false;
+    }
+    return true;
+  });
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">สินค้าทั้งหมด</h1>
+        <div className="flex flex-col">
+          <h1 className="text-2xl font-semibold text-gray-900">จัดการสินค้า</h1>
+          <p className="text-sm text-gray-600 mt-1">จัดการและแก้ไขข้อมูลสินค้าบนร้านค้า</p>
+        </div>
         <div className="flex gap-2 items-center">
-          <Button 
-            onClick={() => setCreateOpen(true)}
-            className="bg-green-600 hover:bg-green-700 text-white h-9"
-          >
-            เพิ่มสินค้า
-          </Button>
-          <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-gray-50 h-9">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setViewMode('picture')}
-              className={`rounded-none border-0 h-9 px-3 ${
-                viewMode === 'picture' 
-                  ? 'bg-gray-200 text-gray-800' 
-                  : 'bg-transparent text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <Grid className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setViewMode('card')}
-              className={`rounded-none border-0 h-9 px-3 ${
-                viewMode === 'card' 
-                  ? 'bg-gray-200 text-gray-800' 
-                  : 'bg-transparent text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <List className="w-4 h-4" />
-            </Button>
+          {/* Search Input */}
+          <div className="relative hidden sm:block">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="ค้นหาชื่อสินค้า"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 h-9 w-64"
+            />
           </div>
+          {/* Category Dropdown */}
+          <Select value={filterCategoryId} onValueChange={(val: string) => { setFilterCategoryId(val); }}>
+            <SelectTrigger className="h-9 w-40 border-gray-300">
+              <SelectValue placeholder="ทุกหมวดหมู่" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* View Toggle Buttons */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setViewMode('picture')}
+            className={`h-9 w-9 p-0 ${viewMode === 'picture' ? 'bg-gray-100' : ''}`}
+            title="แสดงเป็นรูปภาพ"
+          >
+            <Grid className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setViewMode('card')}
+            className={`h-9 w-9 p-0 ${viewMode === 'card' ? 'bg-gray-100' : ''}`}
+            title="แสดงเป็นรายการ"
+          >
+            <List className="w-4 h-4" />
+          </Button>
+          {/* Refresh Button */}
           <Button 
             variant="outline" 
             size="sm"
             onClick={refetchProducts}
             disabled={busy}
-            className="flex items-center gap-2 h-9"
+            className="h-9 w-9 p-0"
             title="รีเฟรชข้อมูลสินค้าและรูปภาพ"
           >
             <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
           </Button>
+          {/* Edit Mode Button */}
           <Button 
-            variant={isEditMode ? "secondary" : "outline"} 
+            variant="outline" 
             onClick={() => setIsEditMode((p) => !p)}
-            className="h-9"
+            className="h-9 flex items-center gap-2"
           >
-            {isEditMode ? "ยกเลิกโหมดแก้ไข" : "โหมดแก้ไข"}
+            <Pencil className="w-4 h-4" />
+            <span className="hidden sm:inline">{isEditMode ? "ยกเลิกโหมดแก้ไข" : "โหมดแก้ไข"}</span>
+          </Button>
+          {/* Add Product Button */}
+          <Button 
+            onClick={() => setCreateOpen(true)}
+            className="bg-pink-500 hover:bg-pink-600 text-white h-9 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">เพิ่มสินค้าใหม่</span>
+            <span className="sm:hidden">เพิ่ม</span>
           </Button>
         </div>
       </div>
@@ -486,7 +571,7 @@ export default function ProductsPage() {
       {viewMode === 'picture' ? (
         // Picture View - Grid of images only
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
-          {serverProducts.map((product) => {
+          {filteredProducts.map((product) => {
             // Try to find image by BASE SKU first, then fallback to variant image
             const skuImage = findImageBySku(product.base_sku);
             const variantImage = product.variants?.find(v => v.image_url)?.image_url;
@@ -511,7 +596,7 @@ export default function ProductsPage() {
                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-end pointer-events-none">
                   <div className="p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full">
                     <div className="text-xs font-medium leading-tight break-words line-clamp-2">{product.product_name}</div>
-                    <div className="text-xs mt-1 font-semibold">{product.base_price.toFixed(2)} บาท</div>
+                    <div className="text-xs mt-1 font-semibold">{product.base_price.toFixed(2)} ฿</div>
                     {product.base_sku && (
                       <div className="text-xs mt-1 opacity-75">SKU: {product.base_sku}</div>
                     )}
@@ -524,7 +609,7 @@ export default function ProductsPage() {
       ) : (
         // Card View - Detailed cards
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
-          {serverProducts.map((product) => {
+          {filteredProducts.map((product) => {
             // Try to find image by BASE SKU first, then fallback to variant image
             const skuImage = findImageBySku(product.base_sku);
             const variantImage = product.variants?.find(v => v.image_url)?.image_url;
@@ -554,7 +639,7 @@ export default function ProductsPage() {
                       <p className="text-gray-600 text-xs line-clamp-3 flex-1">{product.description}</p>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-700">
                         <span className="truncate">SKU: <span className="font-medium">{product.base_sku}</span></span>
-                        <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} บาท</span>
+                        <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} ฿</span>
                       </div>
                       
                     </div>
@@ -669,7 +754,7 @@ export default function ProductsPage() {
                 <div className="md:col-span-2 text-sm text-red-600">{catalogError}</div>
               )}
               <div className="md:col-span-2 flex items-center gap-2 pt-2 justify-end">
-                <Button onClick={() => setCreateStep(2)} disabled={!selectedCategoryId || !selectedSubCategoryId}>ถัดไป</Button>
+                <Button onClick={() => setCreateStep(2)}>ถัดไป</Button>
               </div>
             </div>
           ) : createStep === 2 ? (
@@ -707,7 +792,7 @@ export default function ProductsPage() {
               </div>
               <div className="flex items-center gap-2 pt-2 justify-end">
                 <Button variant="outline" onClick={() => setCreateStep(1)}>ย้อนกลับ</Button>
-                <Button onClick={() => setCreateStep(3)} disabled={!createForm.product_name_th || !createForm.product_name_en || createForm.product_name_en.length < 3}>ถัดไป</Button>
+                <Button onClick={() => setCreateStep(3)}>ถัดไป</Button>
               </div>
               {error && (
                 <div className="text-sm text-red-600">{error}</div>
@@ -772,7 +857,7 @@ export default function ProductsPage() {
                 <Button variant="outline" onClick={() => setCreateStep(2)}>ย้อนกลับ</Button>
                 <Button 
                   onClick={async () => { await handleCreate(); if (!error) { setCreateOpen(false); setCreateStep(1); } }} 
-                  disabled={busy || !uploadedImage}
+                  disabled={busy}
                 >
                   {busy ? "กำลังสร้าง..." : "เสร็จสิ้น"}
                 </Button>
