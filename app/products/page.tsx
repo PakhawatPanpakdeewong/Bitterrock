@@ -489,23 +489,23 @@ export default function ProductsPage() {
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-2xl font-semibold text-gray-900">จัดการสินค้า</h1>
-          <p className="text-sm text-gray-600 mt-1">จัดการและแก้ไขข้อมูลสินค้าบนร้านค้า</p>
+          <p className="text-sm text-gray-600 mt-0.5">จัดการและแก้ไขข้อมูลสินค้าบนร้านค้า</p>
         </div>
         <div className="flex gap-2 items-center">
           {/* Search Input */}
           <div className="relative hidden sm:block">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <Input
               type="text"
               placeholder="ค้นหาชื่อสินค้า"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-9 w-64"
+              className="pl-9 h-8 w-64 text-xs"
             />
           </div>
           {/* Category Dropdown */}
           <Select value={filterCategoryId} onValueChange={(val: string) => { setFilterCategoryId(val); }}>
-            <SelectTrigger className="h-9 w-40 border-gray-300">
+            <SelectTrigger className="h-8 min-w-[200px] w-auto border-gray-300 whitespace-nowrap text-xs">
               <SelectValue placeholder="ทุกหมวดหมู่" />
             </SelectTrigger>
             <SelectContent>
@@ -520,19 +520,19 @@ export default function ProductsPage() {
             variant="outline"
             size="sm"
             onClick={() => setViewMode('picture')}
-            className={`h-9 w-9 p-0 ${viewMode === 'picture' ? 'bg-gray-100' : ''}`}
+            className={`h-8 w-8 p-0 ${viewMode === 'picture' ? 'bg-gray-100' : ''}`}
             title="แสดงเป็นรูปภาพ"
           >
-            <Grid className="w-4 h-4" />
+            <Grid className="w-3.5 h-3.5" />
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => setViewMode('card')}
-            className={`h-9 w-9 p-0 ${viewMode === 'card' ? 'bg-gray-100' : ''}`}
+            className={`h-8 w-8 p-0 ${viewMode === 'card' ? 'bg-gray-100' : ''}`}
             title="แสดงเป็นรายการ"
           >
-            <List className="w-4 h-4" />
+            <List className="w-3.5 h-3.5" />
           </Button>
           {/* Refresh Button */}
           <Button 
@@ -540,26 +540,26 @@ export default function ProductsPage() {
             size="sm"
             onClick={refetchProducts}
             disabled={busy}
-            className="h-9 w-9 p-0"
+            className="h-8 w-8 p-0"
             title="รีเฟรชข้อมูลสินค้าและรูปภาพ"
           >
-            <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
           </Button>
           {/* Edit Mode Button */}
           <Button 
             variant="outline" 
             onClick={() => setIsEditMode((p) => !p)}
-            className="h-9 flex items-center gap-2"
+            className="h-8 flex items-center gap-1.5 text-xs px-2"
           >
-            <Pencil className="w-4 h-4" />
+            <Pencil className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{isEditMode ? "ยกเลิกโหมดแก้ไข" : "โหมดแก้ไข"}</span>
           </Button>
           {/* Add Product Button */}
           <Button 
             onClick={() => setCreateOpen(true)}
-            className="bg-pink-500 hover:bg-pink-600 text-white h-9 flex items-center gap-2"
+            className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">เพิ่มสินค้าใหม่</span>
             <span className="sm:hidden">เพิ่ม</span>
           </Button>

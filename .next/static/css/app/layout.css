@@ -632,6 +632,9 @@ video {
 .mt-2 {
   margin-top: 0.5rem;
 }
+.mt-0\.5 {
+  margin-top: 0.125rem;
+}
 .line-clamp-2 {
   overflow: hidden;
   display: -webkit-box;
@@ -779,6 +782,9 @@ video {
 .w-full {
   width: 100%;
 }
+.w-auto {
+  width: auto;
+}
 .min-w-0 {
   min-width: 0px;
 }
@@ -790,6 +796,9 @@ video {
 }
 .min-w-\[var\(--radix-select-trigger-width\)\] {
   min-width: var(--radix-select-trigger-width);
+}
+.min-w-\[200px\] {
+  min-width: 200px;
 }
 .max-w-7xl {
   max-width: 80rem;
@@ -893,6 +902,9 @@ video {
 }
 .gap-8 {
   gap: 2rem;
+}
+.gap-1\.5 {
+  gap: 0.375rem;
 }
 .space-x-3 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-x-reverse: 0;
@@ -1259,6 +1271,9 @@ video {
 }
 .pt-5 {
   padding-top: 1.25rem;
+}
+.pl-9 {
+  padding-left: 2.25rem;
 }
 .text-left {
   text-align: left;
