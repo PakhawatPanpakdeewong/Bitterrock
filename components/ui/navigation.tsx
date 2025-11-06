@@ -9,7 +9,8 @@ const navigationItems = [
   { name: 'หน้าแรก', href: '/' },
   { name: 'ประเภทสินค้า', href: '/categories' },
   { name: 'สินค้าทั้งหมด', href: '/products' },
-  { name: 'คลังสินค้า', href: '/inventory' },
+  { name: 'สินค้าในคลัง', href: '/inventory' },
+  { name: 'ที่จัดเก็บสินค้า', href: '/warehouse-stock' },
   { name: 'รายการสั่งซื้อ', href: '/orders' },
 ];
 

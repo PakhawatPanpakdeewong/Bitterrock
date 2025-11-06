@@ -1,10 +1,6 @@
 {
-  "/api/attributes/route": "app/api/attributes/route.js",
-  "/products/page": "app/products/page.js",
-  "/page": "app/page.js",
-  "/api/products/route": "app/api/products/route.js",
-  "/api/upload/route": "app/api/upload/route.js",
-  "/api/categories/route": "app/api/categories/route.js",
-  "/api/r2-objects/route": "app/api/r2-objects/route.js",
-  "/api/sub_categories/route": "app/api/sub_categories/route.js"
+  "/categories/page": "app/categories/page.js",
+  "/inventory/page": "app/inventory/page.js",
+  "/warehouse-stock/page": "app/warehouse-stock/page.js",
+  "/products/page": "app/products/page.js"
 }

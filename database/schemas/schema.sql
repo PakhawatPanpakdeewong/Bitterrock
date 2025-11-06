@@ -190,7 +190,8 @@ CREATE TABLE IF NOT EXISTS Warehouses (
     WarehouseID SERIAL PRIMARY KEY,
     WarehouseName VARCHAR(255) NOT NULL,
     LocationAddress TEXT NOT NULL,
-    ContactPerson VARCHAR(255)
+    ContactPerson VARCHAR(255),
+    Email VARCHAR(255)
 );
 
 -- Payments table
