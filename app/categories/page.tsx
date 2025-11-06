@@ -15,10 +15,22 @@ import {
   SelectContent,
   SelectItem
 } from '@/components/ui/select';
+import { 
+  Tag,
+  Grid,
+  Package,
+  Square,
+  Filter,
+  RefreshCw,
+  Upload,
+  Plus
+} from 'lucide-react';
 
 type Category = {
   category_id: number;
   category_name: string;
+  category_name_th?: string;
+  category_name_en?: string;
   description: string;
   created_date: string;
 };
@@ -69,8 +81,13 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // View toggle state
-  const [currentView, setCurrentView] = useState<'subcategories' | 'attributes'>('subcategories');
+  // View toggle state - support 5 views
+  const [currentView, setCurrentView] = useState<'categories' | 'subcategories' | 'products' | 'attributes' | 'attributeValues'>('categories');
+  
+  // Products state
+  const [products, setProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading] = useState<boolean>(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
   
   // Subcategories state and filter
   const [subCategories, setSubCategories] = useState<Array<{
@@ -144,15 +161,22 @@ export default function CategoriesPage() {
   useEffect(() => {
     fetchCategories();
     fetchAttributes();
+    fetchAllSubCategories();
+    fetchAllAttributeValues();
+    fetchAllProducts();
   }, []);
 
   useEffect(() => {
-    fetchSubCategories(selectedCategoryId);
-  }, [selectedCategoryId]);
+    if (currentView === 'subcategories') {
+      fetchSubCategories(selectedCategoryId);
+    }
+  }, [selectedCategoryId, currentView]);
 
   useEffect(() => {
-    fetchAttributeValues(selectedAttributeId);
-  }, [selectedAttributeId]);
+    if (currentView === 'attributeValues') {
+      fetchAttributeValues(selectedAttributeId);
+    }
+  }, [selectedAttributeId, currentView]);
 
   const fetchCategories = async () => {
     try {
@@ -164,8 +188,6 @@ export default function CategoriesPage() {
       
       if (data.success) {
         setCategories(Array.isArray(data.data) ? data.data : []);
-        // After categories are loaded, also load subcategories (unfiltered)
-        await fetchSubCategories('all');
       } else {
         setError(data.error || 'Failed to fetch categories');
       }
@@ -174,6 +196,71 @@ export default function CategoriesPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchAllSubCategories = async () => {
+    try {
+      const res = await fetch('/api/sub_categories');
+      const json = await res.json();
+      if (json.success) {
+        setSubCategories(Array.isArray(json.data) ? json.data : []);
+      }
+    } catch (err) {
+      // Silent fail for count
+    }
+  };
+
+  const fetchAllAttributeValues = async () => {
+    try {
+      const response = await fetch('/api/attribute-values');
+      const data = await response.json();
+      if (data.success) {
+        setAttributeValues(Array.isArray(data.data) ? data.data : []);
+      }
+    } catch (err) {
+      // Silent fail for count
+    }
+  };
+
+  const fetchAllProducts = async () => {
+    try {
+      setProductsLoading(true);
+      const response = await fetch('/api/products?limit=10000');
+      const data = await response.json();
+      if (data.ok) {
+        setProducts(Array.isArray(data.items) ? data.items : []);
+      }
+    } catch (err) {
+      setProductsError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
+  // Format date in Thai format
+  const formatThaiDate = () => {
+    const now = new Date();
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear() + 543; // Convert to Buddhist Era
+    return `${day}/${month}/${year}`;
+  };
+
+  // Refresh all data
+  const handleRefresh = async () => {
+    await Promise.all([
+      fetchCategories(),
+      fetchAttributes(),
+      fetchAllSubCategories(),
+      fetchAllAttributeValues(),
+      fetchAllProducts()
+    ]);
+  };
+
+  // Export data function
+  const handleExport = () => {
+    // TODO: Implement export functionality
+    console.log('Export data');
   };
 
   const fetchSubCategories = async (categoryId: string) => {
@@ -449,6 +536,7 @@ export default function CategoriesPage() {
         setIsAddAttrValueModalOpen(false);
         resetAttrValueForm();
         await fetchAttributeValues(selectedAttributeId);
+        await fetchAllAttributeValues(); // Update count in summary card
         setAttrError(null);
       } else {
         setAttrError(result.error || 'Failed to create attribute value');
@@ -483,6 +571,7 @@ export default function CategoriesPage() {
         setEditingAttributeValue(null);
         resetAttrValueForm();
         await fetchAttributeValues(selectedAttributeId);
+        await fetchAllAttributeValues(); // Update count in summary card
         setAttrError(null);
       } else {
         setAttrError(result.error || 'Failed to update attribute value');
@@ -509,6 +598,7 @@ export default function CategoriesPage() {
         setIsDeleteAttrValueModalOpen(false);
         setDeletingAttributeValue(null);
         await fetchAttributeValues(selectedAttributeId);
+        await fetchAllAttributeValues(); // Update count in summary card
         setAttrError(null);
       } else {
         setAttrError(result.error || 'Failed to delete attribute value');
@@ -557,61 +647,319 @@ export default function CategoriesPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold">ประเภทของสินค้า</h1>
-        <div className="flex gap-2">
-          <Button 
-            onClick={() => setIsAddSubModalOpen(true)}
-            className="bg-green-500 hover:bg-green-600"
-            disabled={currentView !== 'subcategories'}
+      {/* Header Section */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col">
+          <h1 className="text-2xl font-semibold text-gray-900">ประเภทและหมวดหมู่ของสินค้า</h1>
+          <p className="text-sm text-gray-600 mt-0.5">การจัดการประเภท/หมวดหมู่/คุณสมบัติสินค้า</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-gray-600">อัปเดตเมื่อ {formatThaiDate()}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            className="h-8 w-8 p-0"
           >
-            เพิ่มหมวดย่อย
-          </Button>
-          <Button 
-            onClick={() => setIsAddAttrModalOpen(true)}
-            className="bg-blue-500 hover:bg-blue-600"
-            disabled={currentView !== 'attributes'}
-          >
-            เพิ่มคุณสมบัติ
-          </Button>
-          <Button 
-            onClick={() => setIsAddAttrValueModalOpen(true)}
-            className="bg-purple-500 hover:bg-purple-600"
-            disabled={currentView !== 'attributes'}
-          >
-            เพิ่มค่าคุณสมบัติ
+            <RefreshCw className="w-3.5 h-3.5" />
           </Button>
           <Button 
             onClick={() => setIsEditMode((prev) => !prev)}
             variant={isEditMode ? 'secondary' : 'outline'}
+            size="sm"
+            className="h-8 flex items-center gap-1.5 text-xs px-2"
+            disabled={currentView === 'categories' || currentView === 'attributes'}
           >
             {isEditMode ? 'ยกเลิกโหมดแก้ไข' : 'โหมดแก้ไข'}
           </Button>
+          {currentView === 'subcategories' && (
+            <Button
+              onClick={() => setIsAddSubModalOpen(true)}
+              className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>เพิ่มหมวดหมู่สินค้า</span>
+            </Button>
+          )}
+          {currentView === 'attributeValues' && (
+            <Button
+              onClick={() => setIsAddAttrValueModalOpen(true)}
+              className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>เพิ่มคุณสมบัติสินค้า</span>
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* View Toggle Buttons */}
-      <div className="flex gap-2">
-        <Button 
+      {/* Summary Cards - 5 tabs */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        {/* All Product Types */}
+        <Card 
+          className={`cursor-pointer transition-all hover:shadow-md ${
+            currentView === 'categories' ? 'ring-2 ring-blue-500' : ''
+          }`}
+          onClick={() => setCurrentView('categories')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">ประเภทสินค้าทั้งหมด</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {loading ? '...' : categories.length}
+                </p>
+              </div>
+              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <Tag className="w-5 h-5 text-yellow-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* All Subcategories */}
+        <Card 
+          className={`cursor-pointer transition-all hover:shadow-md ${
+            currentView === 'subcategories' ? 'ring-2 ring-blue-500' : ''
+          }`}
           onClick={() => setCurrentView('subcategories')}
-          variant={currentView === 'subcategories' ? 'default' : 'outline'}
-          className={currentView === 'subcategories' ? 'bg-blue-600 hover:bg-blue-700' : ''}
         >
-          หมวดย่อย (Subcategories)
-        </Button>
-        <Button 
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">หมวดหมู่ย่อยทั้งหมด</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {subLoading ? '...' : subCategories.length}
+                </p>
+              </div>
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <Grid className="w-5 h-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* All Product Items */}
+        <Card 
+          className={`cursor-pointer transition-all hover:shadow-md ${
+            currentView === 'products' ? 'ring-2 ring-blue-500' : ''
+          }`}
+          onClick={() => setCurrentView('products')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">ความหลากหลายของสินค้า</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {productsLoading ? '...' : products.length}
+                </p>
+              </div>
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <Package className="w-5 h-5 text-blue-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Main Attributes */}
+        <Card 
+          className={`cursor-pointer transition-all hover:shadow-md ${
+            currentView === 'attributes' ? 'ring-2 ring-blue-500' : ''
+          }`}
           onClick={() => setCurrentView('attributes')}
-          variant={currentView === 'attributes' ? 'default' : 'outline'}
-          className={currentView === 'attributes' ? 'bg-blue-600 hover:bg-blue-700' : ''}
         >
-          ค่าคุณสมบัติ (Attribute Values)
-        </Button>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">คุณสมบัติหลัก</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {attrLoading ? '...' : attributes.length}
+                </p>
+              </div>
+              <div className="w-10 h-10 bg-pink-100 rounded-lg flex items-center justify-center">
+                <Square className="w-5 h-5 text-pink-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* All Sub-attributes */}
+        <Card 
+          className={`cursor-pointer transition-all hover:shadow-md ${
+            currentView === 'attributeValues' ? 'ring-2 ring-blue-500' : ''
+          }`}
+          onClick={() => setCurrentView('attributeValues')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">คุณสมบัติย่อยทั้งหมด</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {attrLoading ? '...' : attributeValues.length}
+                </p>
+              </div>
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <Filter className="w-5 h-5 text-purple-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {isEditMode && (
         <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded p-3">
-          คลิกแถวรายการเพื่อแก้ไขข้อมูล{currentView === 'subcategories' ? 'หมวดย่อย' : 'ค่าคุณสมบัติ'}
+          คลิกแถวรายการเพื่อแก้ไขข้อมูล{currentView === 'subcategories' ? 'หมวดย่อย' : currentView === 'attributeValues' ? 'ค่าคุณสมบัติ' : currentView === 'categories' ? 'ประเภทสินค้า' : currentView === 'attributes' ? 'คุณสมบัติ' : 'สินค้า'}
         </div>
+      )}
+
+      {/* Categories View */}
+      {currentView === 'categories' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">ประเภทสินค้า (Categories)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loading ? (
+              <div className="text-sm text-gray-600">กำลังโหลดประเภทสินค้า...</div>
+            ) : error ? (
+              <div className="text-sm text-red-600">{error}</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[800px]">
+                  <THead>
+                    <TR>
+                      <TH>รหัส</TH>
+                      <TH>ชื่อประเภท (ไทย)</TH>
+                      <TH>ชื่อประเภท (อังกฤษ)</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {categories.length === 0 ? (
+                      <TR>
+                        <TD colSpan={3} className="text-center text-gray-500 py-8">
+                          ไม่พบข้อมูลประเภทสินค้า
+                        </TD>
+                      </TR>
+                    ) : (
+                      categories.map((cat) => (
+                        <TR key={cat.category_id}>
+                          <TD>{cat.category_id}</TD>
+                          <TD>{cat.category_name_th || cat.category_name}</TD>
+                          <TD>{cat.category_name_en || 'N/A'}</TD>
+                        </TR>
+                      ))
+                    )}
+                  </TBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Products View */}
+      {currentView === 'products' && (
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-base">ความหลากหลายของสินค้า (Products)</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                className="h-9 flex items-center gap-2"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span className="text-sm">ส่งออกข้อมูล</span>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {productsLoading ? (
+              <div className="text-sm text-gray-600">กำลังโหลดความหลากหลายของสินค้า...</div>
+            ) : productsError ? (
+              <div className="text-sm text-red-600">{productsError}</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[800px]">
+                  <THead>
+                    <TR>
+                      <TH>รหัส</TH>
+                      <TH>ชื่อสินค้า (ไทย)</TH>
+                      <TH>ชื่อสินค้า (อังกฤษ)</TH>
+                      <TH>หมวดหมู่ย่อย</TH>
+                      <TH>ราคาพื้นฐาน</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {products.length === 0 ? (
+                      <TR>
+                        <TD colSpan={5} className="text-center text-gray-500 py-8">
+                          ไม่พบข้อมูลสินค้า
+                        </TD>
+                      </TR>
+                    ) : (
+                      products.map((prod) => (
+                        <TR key={prod.id}>
+                          <TD>{prod.id}</TD>
+                          <TD>{prod.product_name_th}</TD>
+                          <TD>{prod.product_name_en}</TD>
+                          <TD>{prod.sub_categories_name || 'N/A'}</TD>
+                          <TD>{prod.base_price ? `฿${Number(prod.base_price).toFixed(2)}` : 'N/A'}</TD>
+                        </TR>
+                      ))
+                    )}
+                  </TBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Attributes View */}
+      {currentView === 'attributes' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">คุณสมบัติหลัก (Attributes)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {attrLoading ? (
+              <div className="text-sm text-gray-600">กำลังโหลดคุณสมบัติ...</div>
+            ) : attrError ? (
+              <div className="text-sm text-red-600">{attrError}</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[800px]">
+                  <THead>
+                    <TR>
+                      <TH>รหัส</TH>
+                      <TH>ชื่อคุณสมบัติ (ไทย)</TH>
+                      <TH>ชื่อคุณสมบัติ (อังกฤษ)</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {attributes.length === 0 ? (
+                      <TR>
+                        <TD colSpan={3} className="text-center text-gray-500 py-8">
+                          ไม่พบข้อมูลคุณสมบัติ
+                        </TD>
+                      </TR>
+                    ) : (
+                      attributes.map((attr) => (
+                        <TR key={attr.attribute_id}>
+                          <TD>{attr.attribute_id}</TD>
+                          <TD>{attr.attribute_name_th}</TD>
+                          <TD>{attr.attribute_name_en}</TD>
+                        </TR>
+                      ))
+                    )}
+                  </TBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Subcategories Filter */}
@@ -688,7 +1036,7 @@ export default function CategoriesPage() {
       )}
 
       {/* Attributes Values Filter */}
-      {currentView === 'attributes' && (
+      {currentView === 'attributeValues' && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">ค่าคุณสมบัติ (Attribute Values)</CardTitle>

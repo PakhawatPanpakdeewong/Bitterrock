@@ -50,7 +50,7 @@ export function Navigation() {
                     key={item.name}
                     href={item.href}
                     className={cn(
-                      'px-3 py-2 text-sm font-medium transition-colors duration-200',
+                      'px-3 py-2 text-xs font-medium transition-colors duration-200',
                       isActive
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
@@ -68,7 +68,7 @@ export function Navigation() {
             {/* Settings Button */}
             <button
               type="button"
-              className="hidden md:inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-foreground bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors duration-200"
+              className="hidden md:inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-xs font-medium text-foreground bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors duration-200"
             >
               <svg
                 className="w-4 h-4 mr-2"
@@ -142,7 +142,7 @@ export function Navigation() {
                 href={item.href}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={cn(
-                  'block px-3 py-2 rounded-md text-base font-medium transition-colors duration-200',
+                  'block px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200',
                   isActive
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
@@ -155,7 +155,7 @@ export function Navigation() {
           {/* Mobile Settings Button */}
           <button
             type="button"
-            className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200"
+            className="block w-full text-left px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200"
           >
             <svg
               className="w-4 h-4 mr-2 inline"

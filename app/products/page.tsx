@@ -853,11 +853,16 @@ export default function ProductsPage() {
                 )}
               </div>
 
+              {!imagePreview && (
+                <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                  ⚠️ กรุณาอัปโหลดรูปภาพสินค้าก่อนเสร็จสิ้น
+                </div>
+              )}
               <div className="flex items-center gap-2 pt-2 justify-end">
                 <Button variant="outline" onClick={() => setCreateStep(2)}>ย้อนกลับ</Button>
                 <Button 
                   onClick={async () => { await handleCreate(); if (!error) { setCreateOpen(false); setCreateStep(1); } }} 
-                  disabled={busy}
+                  disabled={busy || !uploadedImage}
                 >
                   {busy ? "กำลังสร้าง..." : "เสร็จสิ้น"}
                 </Button>
