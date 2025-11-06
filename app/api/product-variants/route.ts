@@ -20,12 +20,14 @@ export async function GET(req: NextRequest) {
 
     // Using lowercase column names without underscores
     let sql = `
-      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.attributevalueid as attribute_value_id, pv.sku, pv.price, pv.imageurl as image_url, pv.isactive as is_active,
+      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.attributevalueid as attribute_value_id, pv.sku, pv.price, pv.isactive as is_active,
+             p.productnameth as product_name_th,
              av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en,
              a.attributenameth as attribute_name_th, a.attributenameen as attribute_name_en
       FROM productvariants pv
-      JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
-      JOIN attributes a ON a.attributeid = av.attributeid
+      LEFT JOIN products p ON p.productid = pv.productid
+      LEFT JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
+      LEFT JOIN attributes a ON a.attributeid = av.attributeid
     `;
     
     const params: any[] = [];
@@ -38,17 +40,29 @@ export async function GET(req: NextRequest) {
     params.push(limit, offset);
 
     const result = await query(sql, params);
-    const variants = result.rows as unknown as DbVariant[];
+    const variants = result.rows as Array<{
+      variant_id: number;
+      product_id: number;
+      attribute_value_id: number;
+      sku: string | null;
+      price: string;
+      image_url?: string | null;
+      is_active: boolean | null;
+      product_name_th: string;
+      attribute_name_th: string;
+      attribute_value_th: string;
+    }>;
 
     const items = variants.map((v) => ({
       variant_id: v.variant_id,
       product_id: v.product_id,
+      product_name_th: v.product_name_th,
       attribute_value_id: v.attribute_value_id,
+      attribute_label: `${v.attribute_name_th}: ${v.attribute_value_th}`,
       sku: v.sku,
       price: Number(v.price),
-      image_url: v.image_url,
+      image_url: v.image_url ?? null,
       is_active: v.is_active,
-      variant_name: `${v.attribute_name_th}: ${v.attribute_value_th}`,
     }));
 
     return NextResponse.json({ ok: true, items });
@@ -78,10 +92,10 @@ export async function POST(req: NextRequest) {
     }
 
     const insertRes = await query(
-      `INSERT INTO productvariants (productid, attributevalueid, sku, price, imageurl, isactive)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO productvariants (productid, attributevalueid, sku, price, isactive)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING variantid as variant_id`,
-      [Number(product_id), attribute_value_id, sku, Number(price), image_url, is_active]
+      [Number(product_id), attribute_value_id, sku, Number(price), is_active]
     );
 
     const newId = insertRes.rows[0]?.variant_id;
@@ -157,6 +171,17 @@ export async function DELETE(req: NextRequest) {
 
     if (!variant_id || Number.isNaN(variant_id)) {
       return NextResponse.json({ ok: false, error: 'variant_id is required' }, { status: 400 });
+    }
+
+    // Block deletion if variant is referenced in inventories
+    const invCountRes = await query('SELECT COUNT(1) AS cnt FROM inventories WHERE variantid = $1', [variant_id]);
+    const invCount = Number(invCountRes.rows?.[0]?.cnt || 0);
+    if (invCount > 0) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Cannot delete: variant is referenced by inventories',
+        details: `There are ${invCount} inventory record(s) using this variant.`
+      }, { status: 409 });
     }
 
     await query(`DELETE FROM productvariants WHERE variantid = $1`, [variant_id]);

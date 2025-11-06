@@ -1052,7 +1052,7 @@ export default function InventoryPage() {
                         onValueChange={(value: string) => {
                           setFormData(prev => ({
                             ...prev,
-                            variant_id: value ? Number(value) : null,
+                            variant_id: value === 'none' || !value ? null : Number(value),
                           }));
                         }}
                       >
@@ -1060,7 +1060,7 @@ export default function InventoryPage() {
                           <SelectValue placeholder="เลือกรูปแบบสินค้า (ไม่บังคับ)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">ไม่เลือกรูปแบบ</SelectItem>
+                          <SelectItem value="none">ไม่เลือกรูปแบบ</SelectItem>
                           {selectedProductVariants.map((variant) => (
                             <SelectItem key={variant.variant_id} value={variant.variant_id.toString()}>
                               {variant.variant_name} {variant.sku && `(${variant.sku})`} - ฿{variant.price.toLocaleString()}

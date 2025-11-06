@@ -83,6 +83,7 @@ export async function GET(req: NextRequest) {
 
     const items = products.map((p) => ({
       id: p.product_id,
+      sub_category_id: p.sub_category_id,
       sub_categories_name: p.sub_category_name,
       // keep field name 'product_name' for frontend compatibility; use TH name by default
       product_name: p.product_name_th,

@@ -1,15 +1,14 @@
 {
+  "/inventory/page": "app/inventory/page.js",
   "/categories/page": "app/categories/page.js",
   "/products/page": "app/products/page.js",
-  "/inventory/page": "app/inventory/page.js",
-  "/warehouse-stock/page": "app/warehouse-stock/page.js",
-  "/orders/page": "app/orders/page.js",
-  "/api/inventory/route": "app/api/inventory/route.js",
   "/api/categories/route": "app/api/categories/route.js",
-  "/api/attributes/route": "app/api/attributes/route.js",
   "/api/sub_categories/route": "app/api/sub_categories/route.js",
-  "/api/products/route": "app/api/products/route.js",
+  "/api/attributes/route": "app/api/attributes/route.js",
   "/api/attribute-values/route": "app/api/attribute-values/route.js",
+  "/api/product-variants/route": "app/api/product-variants/route.js",
+  "/api/products/route": "app/api/products/route.js",
+  "/api/inventory/route": "app/api/inventory/route.js",
   "/api/r2-objects/route": "app/api/r2-objects/route.js",
-  "/page": "app/page.js"
+  "/api/warehouses/route": "app/api/warehouses/route.js"
 }
