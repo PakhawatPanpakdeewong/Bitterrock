@@ -1,48 +1,107 @@
 ﻿ Bitterrock Project Structure
 ===============================
 
- frontend/                    # Next.js React Application
-  app/                     # App Router pages
-     categories/page.tsx  # Categories page
-     products/page.tsx    # Products page
-     orders/page.tsx      # Orders page
-     inventory/page.tsx   # Inventory page
-     layout.tsx           # Root layout
-  components/              # UI Components
-     ui/                  # Shadcn UI components
-     utils/               # Utility functions
-  src/store/               # Zustand state management
-  public/                  # Static assets
-  package.json             # Frontend dependencies
-  tsconfig.json            # TypeScript config
+ app/                          # Next.js App Router
+  api/                         # API Routes (Next.js API Routes)
+     attributes/               # Attribute management API
+        route.ts
+     attribute-values/         # Attribute value management API
+        route.ts
+     categories/               # Category CRUD API
+        route.ts
+     inventory/                # Inventory management API
+        route.ts
+     product-variants/         # Product variant management API
+        route.ts
+     products/                 # Product CRUD API
+        route.ts
+     r2-objects/               # R2 storage objects API
+        route.ts
+     r2-test/                  # R2 storage test API
+        route.ts
+     sub_categories/            # Subcategory management API
+        route.ts
+     upload/                   # File upload handler API
+        route.ts
+     warehouses/               # Warehouse management API
+        route.ts
+  categories/                  # Categories management page
+     page.tsx
+  inventory/                   # Inventory management page
+     page.tsx
+  orders/                      # Orders management page
+     page.tsx
+  products/                    # Products management page
+     page.tsx
+  warehouse-stock/             # Warehouse stock page
+     page.tsx
+  globals.css                  # Global styles
+  layout.tsx                   # Root layout
+  page.tsx                     # Home page
 
- backend/                     # Express.js API Server
-  src/                     # Backend source code
-     controllers/         # Route controllers
-     routes/              # API routes
-     models/              # Data models
-     middleware/          # Express middleware
-     utils/               # Utility functions
-     index.ts             # Main server file
-  package.json             # Backend dependencies
-  tsconfig.json            # TypeScript config
+ components/                   # UI Components
+  ui/                          # Shadcn UI components
+     button.tsx                # Button component
+     card.tsx                  # Card components
+     input.tsx                 # Input component
+     label.tsx                 # Label component
+     layout-content.tsx        # Layout content component
+     modal.tsx                 # Modal component
+     navigation.tsx            # Navigation component
+     responsive-image.tsx      # Responsive image component
+     select.tsx                # Select component
+     sidebar-context.tsx       # Sidebar context
+     sidebar.tsx               # Sidebar component
+     table.tsx                 # Table components
+  utils/                       # Utility functions
+     cn.ts                     # Class name utility
 
- database/                    # Database Configuration
-  schemas/                 # Database schemas
-     schema.sql           # Complete DB schema
-  migrations/              # Database migrations
-  seeds/                   # Database seed data
-  connection.ts            # DB connection utility
-  test-db-connection.js    # Connection test
-  package.json             # Database dependencies
+ src/                          # Source code
+  store/                       # Zustand state management
+     products.ts               # Products store
 
- environment/                 # Environment Configuration
-  .env.local               # Local environment (SECURE)
-  .env.example             # Environment template
+ database/                     # Database Configuration
+  schemas/                     # Database schemas
+     schema.sql                # Complete DB schema
+  connection.ts                # DB connection utility
+  db.ts                        # Database helper functions
+  test-db-connection.js        # Connection test script
+  add-test-product.ts          # Test product script
+  package.json                 # Database dependencies
 
- packages/                    # Shared Packages
- (Ready for shared utilities)
+ public/                       # Static assets
+  fonts/                       # Custom fonts (LINE Seed Sans TH)
+     LINESeedSansTH_W_Bd.woff2
+     LINESeedSansTH_W_He.woff2
+     LINESeedSansTH_W_Rg.woff2
+     LINESeedSansTH_W_Th.woff2
+     LINESeedSansTH_W_XBd.woff2
+  KiddyCareLogo.png            # Logo
+  uploads/                     # Uploaded files
+     CPS-ASU-HO.jpg
 
- package.json                 # Root workspace configuration
- README.md                    # Project documentation
- .gitignore                   # Git ignore rules
+ environment/                  # Environment Configuration
+  .env.local                   # Local environment (SECURE)
+  .env.example                 # Environment template
+
+ types/                        # TypeScript type definitions
+  radix-select.d.ts            # Radix UI Select types
+
+ Configuration Files:
+  package.json                 # Project dependencies
+  tsconfig.json                # TypeScript configuration
+  tailwind.config.ts           # Tailwind CSS configuration
+  postcss.config.js            # PostCSS configuration
+  next.config.js               # Next.js configuration
+  components.json              # Shadcn UI configuration
+  setup-env.js                 # Environment setup script
+
+ Documentation:
+  README.md                    # Project documentation
+  PHASE_ONE_SNAPSHORT.md       # Phase One snapshot
+  TECH_STACK_IMPLEMENTATION.md # Tech stack implementation details
+  TECH_STACK_SNAPSHOT.md       # Tech stack snapshot
+  REPOSITORY_SNAPSHOT.md       # Repository snapshot
+  PROJECT_STRUCTURE.txt        # This file
+  .gitignore                   # Git ignore rules
+  LICENSE                      # License file
