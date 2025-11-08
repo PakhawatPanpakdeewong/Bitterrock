@@ -8,7 +8,7 @@ type DbProduct = {
   product_name_en: string;
   description: string | null;
   base_sku: string | null;
-  base_price: string; // numeric comes back as string from pg
+  base_price: string;
   sub_category_name: string | null;
 };
 
@@ -25,6 +25,8 @@ type DbVariant = {
   image_url: string | null;
   is_active: boolean | null;
 };
+
+export const revalidate = 60; // Revalidate every 60 seconds
 
 export async function GET(req: NextRequest) {
   try {
@@ -45,13 +47,32 @@ export async function GET(req: NextRequest) {
     params.push(limit, offset);
 
     const productsRes = await query(
-      `SELECT p.productid as product_id, p.subcategoryid as sub_category_id, p.productnameth as product_name_th, p.productnameen as product_name_en, p.description, p.basesku as base_sku, p.baseprice as base_price,
-              sc.subcategorynameth as sub_category_name
-       FROM products p
-       LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
-       ${whereSql}
-       ORDER BY p.productid
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      `SELECT 
+    p.productid as product_id,
+    p.subcategoryid as sub_category_id,
+    p.productnameth as product_name_th,
+    p.productnameen as product_name_en,
+    p.description,
+    p.basesku as base_sku,
+    p.baseprice as base_price,
+    sc.subcategorynameth as sub_category_name,
+    pv.variantid as variant_id,
+    pv.attributevalueid as attribute_value_id,
+    pv.sku as variant_sku,
+    pv.price as variant_price,
+    pv.isactive as variant_is_active,
+    av.attributevalueth as attribute_value_th,
+    av.attributevalueen as attribute_value_en,
+    a.attributenameth as attribute_name_th,
+    a.attributenameen as attribute_name_en
+   FROM products p
+   LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
+   LEFT JOIN productvariants pv ON pv.productid = p.productid
+   LEFT JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
+   LEFT JOIN attributes a ON a.attributeid = av.attributeid
+   ${whereSql}
+   ORDER BY p.productid, pv.variantid
+   LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
 
@@ -60,7 +81,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, items: [] });
     }
 
-    const productIds = products.map((p) => p.product_id);
+    // Deduplicate products by product_id (LEFT JOIN with variants creates duplicates)
+    const uniqueProductsMap = new Map<number, DbProduct>();
+    for (const p of products) {
+      if (!uniqueProductsMap.has(p.product_id)) {
+        uniqueProductsMap.set(p.product_id, p);
+      }
+    }
+    const uniqueProducts = Array.from(uniqueProductsMap.values());
+
+    const productIds = uniqueProducts.map((p) => p.product_id);
 
     // Fetch variants for these products; join attribute values and attributes for labels - using lowercase column names without underscores
     const variantsRes = await query(
@@ -81,11 +111,10 @@ export async function GET(req: NextRequest) {
       productIdToVariants[v.product_id].push(v);
     }
 
-    const items = products.map((p) => ({
+    const items = uniqueProducts.map((p) => ({
       id: p.product_id,
       sub_category_id: p.sub_category_id,
       sub_categories_name: p.sub_category_name,
-      // keep field name 'product_name' for frontend compatibility; use TH name by default
       product_name: p.product_name_th,
       product_name_th: p.product_name_th,
       product_name_en: p.product_name_en,
@@ -94,7 +123,6 @@ export async function GET(req: NextRequest) {
       base_price: Number(p.base_price),
       variants: (productIdToVariants[p.product_id] || []).map((v) => ({
         variant_id: v.variant_id,
-        // build a human label from attribute name + value
         variant_name: `${v.attribute_name_th}: ${v.attribute_value_th}`,
         sku: v.sku,
         price: Number(v.price),
@@ -102,7 +130,11 @@ export async function GET(req: NextRequest) {
       })),
     }));
 
-    return NextResponse.json({ ok: true, items });
+    return NextResponse.json({ ok: true, items }, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300'
+      }
+    });
   } catch (error: any) {
     const message = error?.message || 'Unknown error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
