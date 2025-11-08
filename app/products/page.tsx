@@ -637,9 +637,9 @@ export default function ProductsPage() {
                       <h3 className="text-sm font-medium text-gray-700">{product.sub_categories_name}</h3>
                       <h2 className="text-base font-semibold line-clamp-2">{product.product_name}</h2>
                       <p className="text-gray-600 text-xs line-clamp-3 flex-1">{product.description}</p>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-700">
+                      <div className="flex flex-col gap-1 text-sm text-gray-700">
                         <span className="truncate">SKU: <span className="font-medium">{product.base_sku}</span></span>
-                        <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} ฿</span>
+                        <span className="text-gray-600">ราคาเริ่มต้น : <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} ฿</span></span>
                       </div>
                       
                     </div>
@@ -900,9 +900,9 @@ export default function ProductsPage() {
 
               <p className="text-gray-600 text-sm leading-relaxed">{detailProduct.description}</p>
 
-              <div className="flex items-center justify-between py-3 border-t border-b border-gray-200">
+              <div className="flex flex-col gap-2 py-3 border-t border-b border-gray-200">
                 <span className="text-sm text-gray-700">SKU: <span className="font-medium">{detailProduct.base_sku}</span></span>
-                <span className="text-lg font-bold text-blue-600">{detailProduct.base_price.toFixed(2)} บาท</span>
+                <span className="text-sm text-gray-600">ราคาเริ่มต้น : <span className="text-lg font-bold text-blue-600">{detailProduct.base_price.toFixed(2)} ฿</span></span>
               </div>
 
             </div>

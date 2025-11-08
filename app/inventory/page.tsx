@@ -27,8 +27,11 @@ import {
   Filter,
   ChevronRight,
   ChevronLeft,
-  X
+  X,
+  FileSpreadsheet,
+  FileText
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Modal } from '@/components/ui/modal';
 import { Label } from '@/components/ui/label';
 
@@ -137,6 +140,25 @@ export default function InventoryPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Detail modal states
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  // Edit modal states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [itemToEdit, setItemToEdit] = useState<InventoryItem | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    stock_quantity: 0,
+    reserved_quantity: 0,
+    expired_date: '',
+    is_active: true,
+  });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editErrors, setEditErrors] = useState<{
+    stock_quantity?: string;
+    reserved_quantity?: string;
+  }>({});
 
   useEffect(() => {
     fetchData();
@@ -382,7 +404,7 @@ export default function InventoryPage() {
         variant_id: formData.variant_id || null,
         warehouse_id: formData.warehouse_id,
         stock_quantity: formData.stock_quantity,
-        reserved_quantity: formData.reserved_quantity,
+        reserved_quantity: formData.reserved_quantity || 0,
         expired_date: formData.expired_date || null,
       };
 
@@ -414,6 +436,11 @@ export default function InventoryPage() {
   const selectedWarehouse = warehouses.find(w => w.warehouseid === formData.warehouse_id);
 
   const handleDeleteClick = (item: InventoryItem) => {
+    // Check if item is active (not "ไม่พร้อมใช้งาน")
+    if (item.is_active === true) {
+      alert('ไม่สามารถลบสต็อกสินค้านี้ได้ เนื่องจากสถานะการใช้งานเป็น "เปิดการขาย" กรุณาเปลี่ยนสถานะเป็น "ไม่พร้อมใช้งาน" ก่อนลบ');
+      return;
+    }
     setItemToDelete(item);
     setIsDeleteModalOpen(true);
   };
@@ -449,6 +476,267 @@ export default function InventoryPage() {
   const handleDeleteCancel = () => {
     setIsDeleteModalOpen(false);
     setItemToDelete(null);
+  };
+
+  const handleViewDetail = (item: InventoryItem) => {
+    setSelectedItem(item);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleCloseDetail = () => {
+    setIsDetailModalOpen(false);
+    setSelectedItem(null);
+  };
+
+  const handleEditClick = (item: InventoryItem) => {
+    setItemToEdit(item);
+    setEditFormData({
+      stock_quantity: item.stock_quantity,
+      reserved_quantity: item.reserved_quantity,
+      expired_date: item.expired_date ? item.expired_date.split('T')[0] : '',
+      is_active: item.is_active ?? true,
+    });
+    setEditErrors({});
+    setIsEditModalOpen(true);
+  };
+
+  const handleCloseEdit = () => {
+    setIsEditModalOpen(false);
+    setItemToEdit(null);
+    setEditFormData({
+      stock_quantity: 0,
+      reserved_quantity: 0,
+      expired_date: '',
+      is_active: true,
+    });
+    setEditErrors({});
+  };
+
+  const validateEditForm = (): boolean => {
+    const errors: { stock_quantity?: string; reserved_quantity?: string } = {};
+    
+    if (!editFormData.stock_quantity || editFormData.stock_quantity <= 0) {
+      errors.stock_quantity = 'กรุณากรอกจำนวนสินค้าที่ถูกต้อง (มากกว่า 0)';
+    }
+    if (editFormData.reserved_quantity < 0) {
+      errors.reserved_quantity = 'จำนวนสินค้าที่จองต้องไม่น้อยกว่า 0';
+    }
+    if (editFormData.reserved_quantity > editFormData.stock_quantity) {
+      errors.reserved_quantity = 'จำนวนสินค้าที่จองต้องไม่เกินจำนวนสินค้าทั้งหมด';
+    }
+
+    setEditErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleEditSubmit = async () => {
+    if (!validateEditForm() || !itemToEdit) return;
+
+    try {
+      setEditSubmitting(true);
+      const payload = {
+        inventory_id: itemToEdit.inventory_id,
+        stock_quantity: Number(editFormData.stock_quantity),
+        reserved_quantity: Number(editFormData.reserved_quantity) || 0,
+        expired_date: editFormData.expired_date || null,
+        is_active: editFormData.is_active,
+      };
+
+      const res = await fetch('/api/inventory', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        await fetchData();
+        handleCloseEdit();
+        alert('แก้ไขสต็อกสินค้าสำเร็จ');
+      } else {
+        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+      }
+    } catch (error) {
+      console.error('Error updating inventory:', error);
+      alert('เกิดข้อผิดพลาดในการแก้ไขสต็อกสินค้า');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  // Export functions
+  const exportToExcel = () => {
+    // Prepare data for export
+    const exportData = filteredItems.map(item => ({
+      'รหัสสต็อก': item.inventory_id,
+      'ชื่อสินค้า (ไทย)': item.product_name_th || '',
+      'ชื่อสินค้า (อังกฤษ)': item.product_name_en || '',
+      'SKU': item.variant_sku || '',
+      'หมวดหมู่': item.sub_category_name || '',
+      'คุณสมบัติ': item.attribute_value_th || '',
+      'จำนวนสินค้าทั้งหมด': item.stock_quantity,
+      'จำนวนสินค้าที่จอง': item.reserved_quantity,
+      'จำนวนคงเหลือ': item.available_quantity,
+      'ราคา': item.price ? item.price : '',
+      'สถานะสต็อก': item.available_quantity === 0 
+        ? 'ขาดสต็อก' 
+        : item.available_quantity <= 10 
+        ? 'สต็อกต่ำ' 
+        : 'มีสินค้า',
+      'สถานะการใช้งาน': item.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน',
+      'คลังสินค้า': item.warehouse_name || '',
+      'วันที่นำเข้าคลัง': item.created_date ? formatDate(item.created_date) : '',
+      'วันที่หมดอายุ': item.expired_date ? formatDate(item.expired_date) : '',
+    }));
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // Set column widths
+    const colWidths = [
+      { wch: 12 }, // รหัสสต็อก
+      { wch: 30 }, // ชื่อสินค้า (ไทย)
+      { wch: 30 }, // ชื่อสินค้า (อังกฤษ)
+      { wch: 15 }, // SKU
+      { wch: 20 }, // หมวดหมู่
+      { wch: 20 }, // คุณสมบัติ
+      { wch: 15 }, // จำนวนสินค้าทั้งหมด
+      { wch: 15 }, // จำนวนสินค้าที่จอง
+      { wch: 15 }, // จำนวนคงเหลือ
+      { wch: 12 }, // ราคา
+      { wch: 15 }, // สถานะสต็อก
+      { wch: 18 }, // สถานะการใช้งาน
+      { wch: 20 }, // คลังสินค้า
+      { wch: 20 }, // วันที่นำเข้าคลัง
+      { wch: 20 }, // วันที่หมดอายุ
+    ];
+    ws['!cols'] = colWidths;
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'สต็อกสินค้า');
+
+    // Generate filename with current date
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `สต็อกสินค้า_${dateStr}.xlsx`;
+
+    // Save file
+    XLSX.writeFile(wb, filename);
+  };
+
+  const exportToPDF = async () => {
+    try {
+      // Dynamically import libraries
+      const [{ default: jsPDF }, html2canvas] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas')
+      ]);
+      
+      // Create temporary table element
+      const tableHtml = `
+        <div style="padding: 20px; font-family: 'Sarabun', 'Arial', sans-serif; background: white;">
+          <h1 style="font-size: 24px; margin-bottom: 10px; text-align: center;">รายงานสต็อกสินค้า</h1>
+          <p style="font-size: 12px; margin-bottom: 5px;">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</p>
+          <p style="font-size: 12px; margin-bottom: 20px;">จำนวนรายการ: ${filteredItems.length} รายการ</p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <thead>
+              <tr style="background-color: #3b82f6; color: white;">
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">รหัส</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">ชื่อสินค้า</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">SKU</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">หมวดหมู่</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">จำนวนทั้งหมด</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">จำนวนจอง</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">จำนวนคงเหลือ</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">ราคา</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">สถานะสต็อก</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">สถานะการใช้งาน</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">คลังสินค้า</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredItems.map((item, index) => `
+                <tr style="background-color: ${index % 2 === 0 ? '#f5f7fa' : 'white'};">
+                  <td style="border: 1px solid #ddd; padding: 6px;">${item.inventory_id}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px;">${item.product_name_th || ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px;">${item.variant_sku || ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px;">${item.sub_category_name || ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.stock_quantity}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.reserved_quantity}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.available_quantity}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.price ? `฿${formatCurrency(item.price)}` : ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${item.available_quantity === 0 ? 'ขาดสต็อก' : item.available_quantity <= 10 ? 'สต็อกต่ำ' : 'มีสินค้า'}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${item.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน'}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px;">${item.warehouse_name || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="margin-top: 20px; font-size: 12px;">
+            <p><strong>มูลค่ารวมทั้งหมด:</strong> ฿${formatCurrency(totalValue)}</p>
+            <p><strong>จำนวนสินค้าในสต็อก:</strong> ${productsInStock}</p>
+            <p><strong>สินค้าหมด:</strong> ${outOfStockCount} รายการ</p>
+            <p><strong>สินค้าใกล้หมด:</strong> ${lowStockCount} รายการ</p>
+          </div>
+        </div>
+      `;
+
+      // Create temporary div element
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = tableHtml;
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.style.width = '1200px';
+      document.body.appendChild(tempDiv);
+
+      // Convert to canvas
+      const canvas = await html2canvas.default(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      // Remove temporary div
+      document.body.removeChild(tempDiv);
+
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      const imgWidth = 297; // A4 landscape width in mm
+      const pageHeight = 210; // A4 landscape height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Add additional pages if needed
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      // Generate filename with current date
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `สต็อกสินค้า_${dateStr}.pdf`;
+
+      // Save file
+      pdf.save(filename);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('เกิดข้อผิดพลาดในการส่งออก PDF: ' + (error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'));
+    }
   };
 
   // Calculate metrics
@@ -547,9 +835,23 @@ export default function InventoryPage() {
               <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={fetchData}>
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-8 flex items-center gap-1.5 text-xs px-2">
-                <Upload className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">ส่งออกข้อมูล</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-8 flex items-center gap-1.5 text-xs px-2"
+                onClick={exportToExcel}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">ส่งออก Excel</span>
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-8 flex items-center gap-1.5 text-xs px-2"
+                onClick={exportToPDF}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">ส่งออก PDF</span>
               </Button>
               <Button 
                 className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
@@ -762,11 +1064,21 @@ export default function InventoryPage() {
                         </TD>
                         <TD>
                           <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" className="h-7 text-[0.7rem] px-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-7 text-[0.7rem] px-2"
+                              onClick={() => handleViewDetail(item)}
+                            >
                               <Eye className="w-3 h-3 mr-1" />
                               ดูรายละเอียด
                             </Button>
-                            <Button variant="outline" size="sm" className="h-7 w-7 p-0">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleEditClick(item)}
+                            >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
                             <Button 
@@ -1140,7 +1452,8 @@ export default function InventoryPage() {
                   min="1"
                   value={formData.stock_quantity || ''}
                   onChange={(e) => {
-                    const value = parseInt(e.target.value) || 0;
+                    const inputValue = e.target.value;
+                    const value = inputValue === '' ? 0 : (parseInt(inputValue) || 0);
                     setFormData(prev => ({
                       ...prev,
                       stock_quantity: value,
@@ -1163,9 +1476,10 @@ export default function InventoryPage() {
                   id="reserved_quantity"
                   type="number"
                   min="0"
-                  value={formData.reserved_quantity || ''}
+                  value={formData.reserved_quantity ?? ''}
                   onChange={(e) => {
-                    const value = parseInt(e.target.value) || 0;
+                    const inputValue = e.target.value;
+                    const value = inputValue === '' ? 0 : (parseInt(inputValue) || 0);
                     setFormData(prev => ({
                       ...prev,
                       reserved_quantity: value,
@@ -1338,6 +1652,376 @@ export default function InventoryPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Detail Modal */}
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={handleCloseDetail}
+        title="รายละเอียดสต็อกสินค้า"
+        className="max-w-3xl"
+      >
+        {selectedItem && (
+          <div className="space-y-6">
+            {/* Product Information Section */}
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <h3 className="text-sm font-semibold text-blue-900 mb-3">ข้อมูลสินค้า</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-blue-700 mb-1">ชื่อสินค้า (ไทย)</p>
+                  <p className="text-sm font-medium text-blue-900">{selectedItem.product_name_th || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-blue-700 mb-1">ชื่อสินค้า (อังกฤษ)</p>
+                  <p className="text-sm font-medium text-blue-900">{selectedItem.product_name_en || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-blue-700 mb-1">หมวดหมู่</p>
+                  <p className="text-sm font-medium text-blue-900">{selectedItem.sub_category_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-blue-700 mb-1">SKU</p>
+                  <p className="text-sm font-medium text-blue-900">{selectedItem.variant_sku || 'N/A'}</p>
+                </div>
+                {selectedItem.attribute_value_th && (
+                  <div>
+                    <p className="text-xs text-blue-700 mb-1">คุณสมบัติ</p>
+                    <p className="text-sm font-medium text-blue-900">
+                      {selectedItem.attribute_value_th}
+                      {selectedItem.attribute_value_en && ` (${selectedItem.attribute_value_en})`}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-blue-700 mb-1">ราคา</p>
+                  <p className="text-sm font-medium text-blue-900">
+                    {selectedItem.price ? `฿${formatCurrency(selectedItem.price)}` : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Stock Information Section */}
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+              <h3 className="text-sm font-semibold text-green-900 mb-3">ข้อมูลสต็อก</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-xs text-green-700 mb-1">จำนวนสินค้าทั้งหมด</p>
+                  <p className="text-lg font-bold text-green-900">{selectedItem.stock_quantity}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-green-700 mb-1">จำนวนสินค้าที่จอง</p>
+                  <p className="text-lg font-bold text-orange-600">{selectedItem.reserved_quantity}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-green-700 mb-1">จำนวนคงเหลือ</p>
+                  <p className={`text-lg font-bold ${
+                    selectedItem.available_quantity === 0 
+                      ? 'text-red-600' 
+                      : selectedItem.available_quantity <= 10 
+                      ? 'text-orange-600' 
+                      : 'text-green-600'
+                  }`}>
+                    {selectedItem.available_quantity}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-green-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-green-700">สถานะ:</span>
+                  {getStatusBadge(selectedItem.available_quantity)}
+                  <span className="ml-4 text-xs text-green-700">สถานะการใช้งาน:</span>
+                  {getActiveStatusBadge(selectedItem.is_active)}
+                </div>
+              </div>
+            </div>
+
+            {/* Warehouse Information Section */}
+            <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <h3 className="text-sm font-semibold text-purple-900 mb-3">ข้อมูลคลังสินค้า</h3>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-xs text-purple-700 mb-1">ชื่อคลังสินค้า</p>
+                  <p className="text-sm font-medium text-purple-900">{selectedItem.warehouse_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-purple-700 mb-1">รหัสคลังสินค้า</p>
+                  <p className="text-sm font-medium text-purple-900">#{selectedItem.warehouse_id}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Additional Information Section */}
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">ข้อมูลเพิ่มเติม</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">รหัสสต็อก</p>
+                  <p className="text-sm font-medium text-gray-900">#{selectedItem.inventory_id}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">รหัสสินค้า</p>
+                  <p className="text-sm font-medium text-gray-900">#{selectedItem.product_id}</p>
+                </div>
+                {selectedItem.variant_id && (
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">รหัสรูปแบบสินค้า</p>
+                    <p className="text-sm font-medium text-gray-900">#{selectedItem.variant_id}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">วันที่นำเข้าคลัง</p>
+                  <p className="text-sm font-medium text-gray-900">{formatDate(selectedItem.created_date)}</p>
+                </div>
+                {selectedItem.expired_date && (
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">วันที่หมดอายุ</p>
+                    <p className={`text-sm font-medium ${
+                      new Date(selectedItem.expired_date) < new Date() 
+                        ? 'text-red-600' 
+                        : new Date(selectedItem.expired_date) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                        ? 'text-orange-600'
+                        : 'text-gray-900'
+                    }`}>
+                      {formatDate(selectedItem.expired_date)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Summary Section */}
+            <div className="p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg border border-blue-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">สรุปมูลค่า</h3>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">มูลค่าสต็อกทั้งหมด</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    ฿{formatCurrency((selectedItem.price || 0) * selectedItem.stock_quantity)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">มูลค่าสินค้าพร้อมขาย</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    ฿{formatCurrency((selectedItem.price || 0) * selectedItem.available_quantity)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">มูลค่าสินค้าที่จอง</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    ฿{formatCurrency((selectedItem.price || 0) * selectedItem.reserved_quantity)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <div className="flex items-center justify-end pt-4 border-t">
+              <Button
+                onClick={handleCloseDetail}
+                className="bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                ปิด
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={handleCloseEdit}
+        title="แก้ไขสต็อกสินค้า"
+        className="max-w-2xl"
+      >
+        {itemToEdit && (
+          <div className="space-y-6">
+            {/* Product Info Display */}
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">ข้อมูลสินค้า</h3>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-blue-700 mb-1">ชื่อสินค้า</p>
+                  <p className="font-medium text-blue-900">{itemToEdit.product_name_th}</p>
+                </div>
+                <div>
+                  <p className="text-blue-700 mb-1">SKU</p>
+                  <p className="font-medium text-blue-900">{itemToEdit.variant_sku || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-blue-700 mb-1">คลังสินค้า</p>
+                  <p className="font-medium text-blue-900">{itemToEdit.warehouse_name}</p>
+                </div>
+                <div>
+                  <p className="text-blue-700 mb-1">ราคา</p>
+                  <p className="font-medium text-blue-900">
+                    {itemToEdit.price ? `฿${formatCurrency(itemToEdit.price)}` : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Edit Form */}
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit_stock_quantity" className="text-sm font-medium">
+                  จำนวนสินค้าทั้งหมด <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="edit_stock_quantity"
+                  type="number"
+                  min="1"
+                  value={editFormData.stock_quantity || ''}
+                  onChange={(e) => {
+                    const inputValue = e.target.value;
+                    const value = inputValue === '' ? 0 : (parseInt(inputValue) || 0);
+                    setEditFormData(prev => ({
+                      ...prev,
+                      stock_quantity: value,
+                    }));
+                    setEditErrors(prev => ({ ...prev, stock_quantity: undefined }));
+                  }}
+                  className="mt-1"
+                  placeholder="กรอกจำนวนสินค้า"
+                />
+                {editErrors.stock_quantity && (
+                  <p className="text-xs text-red-500 mt-1">{editErrors.stock_quantity}</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="edit_reserved_quantity" className="text-sm font-medium">
+                  จำนวนสินค้าที่จอง
+                </Label>
+                <Input
+                  id="edit_reserved_quantity"
+                  type="number"
+                  min="0"
+                  value={editFormData.reserved_quantity || ''}
+                  onChange={(e) => {
+                    const inputValue = e.target.value;
+                    const value = inputValue === '' ? 0 : (parseInt(inputValue) || 0);
+                    setEditFormData(prev => ({
+                      ...prev,
+                      reserved_quantity: value,
+                    }));
+                    setEditErrors(prev => ({ ...prev, reserved_quantity: undefined }));
+                  }}
+                  className="mt-1"
+                  placeholder="จำนวนสินค้าที่จองไว้"
+                />
+                {editErrors.reserved_quantity && (
+                  <p className="text-xs text-red-500 mt-1">{editErrors.reserved_quantity}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  จำนวนสินค้าที่พร้อมขาย = จำนวนสินค้า - จำนวนสินค้าที่จอง = {Math.max(0, (editFormData.stock_quantity || 0) - (editFormData.reserved_quantity || 0))}
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="edit_expired_date" className="text-sm font-medium">
+                  วันที่หมดอายุ (ถ้ามี)
+                </Label>
+                <Input
+                  id="edit_expired_date"
+                  type="date"
+                  value={editFormData.expired_date}
+                  onChange={(e) => {
+                    setEditFormData(prev => ({
+                      ...prev,
+                      expired_date: e.target.value,
+                    }));
+                  }}
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">หากสินค้าไม่มีวันหมดอายุ สามารถลบวันที่ได้</p>
+              </div>
+
+              <div>
+                <Label htmlFor="edit_is_active" className="text-sm font-medium">
+                  สถานะการใช้งาน <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={editFormData.is_active ? 'true' : 'false'}
+                  onValueChange={(value: string) => {
+                    setEditFormData(prev => ({
+                      ...prev,
+                      is_active: value === 'true',
+                    }));
+                  }}
+                >
+                  <SelectTrigger id="edit_is_active" className="mt-1">
+                    <SelectValue placeholder="เลือกสถานะการใช้งาน" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">เปิดการขาย</SelectItem>
+                    <SelectItem value="false">ไม่พร้อมใช้งาน</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {editFormData.is_active 
+                    ? 'สินค้าที่สถานะเป็น "เปิดการขาย" จะไม่สามารถลบได้' 
+                    : 'สินค้าที่สถานะเป็น "ไม่พร้อมใช้งาน" สามารถลบได้'}
+                </p>
+              </div>
+
+              {/* Current vs New Values Summary */}
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">เปรียบเทียบค่าเดิมกับค่าใหม่</h3>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <p className="text-gray-600 mb-1">จำนวนสินค้าทั้งหมด</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 line-through">{itemToEdit.stock_quantity}</span>
+                      <span className="font-bold text-blue-600">→ {editFormData.stock_quantity}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 mb-1">จำนวนสินค้าที่จอง</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 line-through">{itemToEdit.reserved_quantity}</span>
+                      <span className="font-bold text-orange-600">→ {editFormData.reserved_quantity}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 mb-1">จำนวนคงเหลือ</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 line-through">{itemToEdit.available_quantity}</span>
+                      <span className={`font-bold ${
+                        (editFormData.stock_quantity - editFormData.reserved_quantity) === 0 
+                          ? 'text-red-600' 
+                          : (editFormData.stock_quantity - editFormData.reserved_quantity) <= 10 
+                          ? 'text-orange-600' 
+                          : 'text-green-600'
+                      }`}>
+                        → {Math.max(0, editFormData.stock_quantity - editFormData.reserved_quantity)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={handleCloseEdit}
+                disabled={editSubmitting}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                onClick={handleEditSubmit}
+                disabled={editSubmitting}
+                className="bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                {editSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

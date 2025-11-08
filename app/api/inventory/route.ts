@@ -130,7 +130,10 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const availableQuantity = Math.max(0, stock_quantity - (reserved_quantity || 0));
+    // Ensure values are numbers
+    const stockQty = Number(stock_quantity) || 0;
+    const reservedQty = Number(reserved_quantity) || 0;
+    const availableQuantity = Math.max(0, stockQty - reservedQty);
 
     const insertRes = await query(
       `INSERT INTO inventories (productid, variantid, warehouseid, stockquantity, reservedquantity, availablequantity, expireddate)
@@ -140,8 +143,8 @@ export async function POST(req: NextRequest) {
         product_id,
         variant_id,
         warehouse_id,
-        stock_quantity,
-        reserved_quantity || 0,
+        stockQty,
+        reservedQty,
         availableQuantity,
         expired_date,
       ]
@@ -159,7 +162,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { inventory_id, stock_quantity, reserved_quantity, expired_date } = body;
+    const { inventory_id, stock_quantity, reserved_quantity, expired_date, is_active } = body;
 
     if (!inventory_id) {
       return NextResponse.json({ ok: false, error: 'inventory_id is required' }, { status: 400 });
@@ -182,6 +185,23 @@ export async function PUT(req: NextRequest) {
     if (expired_date !== undefined) {
       fields.push(`expireddate = $${idx++}`);
       values.push(expired_date);
+    }
+
+    if (is_active !== undefined) {
+      // Update isactive in product_variants table if variant_id exists
+      // First, get the variant_id from inventory
+      const inventoryRes = await query(
+        `SELECT variantid FROM inventories WHERE inventoryid = $1`,
+        [inventory_id]
+      );
+      const variantId = inventoryRes.rows[0]?.variantid;
+      
+      if (variantId) {
+        await query(
+          `UPDATE productvariants SET isactive = $1 WHERE variantid = $2`,
+          [is_active, variantId]
+        );
+      }
     }
 
     // Recalculate available_quantity if stock_quantity or reserved_quantity changed
