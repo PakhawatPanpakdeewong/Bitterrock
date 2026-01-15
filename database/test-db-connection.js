@@ -11,8 +11,16 @@ const dbConfig = {
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  ssl: process.env.DB_SSL === 'true'
 };
+
+// SSL Configuration for cloud databases (Kinsta, etc.)
+if (process.env.DB_SSL === 'true') {
+  dbConfig.ssl = {
+    rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false', // Default: true, set to false for self-signed certs
+  };
+} else {
+  dbConfig.ssl = false;
+}
 
 async function testConnection() {
   const pool = new Pool(dbConfig);

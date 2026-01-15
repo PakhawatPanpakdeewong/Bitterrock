@@ -44,3 +44,7 @@ coverage/
 # OS specific
 ehthumbs.db
 Icon?
+
+# Docker
+.docker.env
+docker-compose.override.yml

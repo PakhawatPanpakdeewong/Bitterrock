@@ -1,14 +1,22 @@
 import { Pool } from 'pg';
 
 // Database connection configuration using environment variables
-const dbConfig = {
+const dbConfig: any = {
   host: process.env.DB_HOST,
   port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  ssl: process.env.DB_SSL === 'true'
 };
+
+// SSL Configuration for cloud databases (Kinsta, etc.)
+if (process.env.DB_SSL === 'true') {
+  dbConfig.ssl = {
+    rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false', // Default: true, set to false for self-signed certs
+  };
+} else {
+  dbConfig.ssl = false;
+}
 
 // Validate required environment variables
 const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];

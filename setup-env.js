@@ -53,7 +53,7 @@ DB_PASSWORD=${dbPassword}
 DB_SSL=${useSsl}
 
 # Next.js Configuration
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3001
 
 # R2 Configuration (for file uploads) - Optional
 # R2_ACCOUNT_ID=your_r2_account_id

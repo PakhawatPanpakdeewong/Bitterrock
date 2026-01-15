@@ -14,14 +14,24 @@ for (const envPath of envPaths) {
 let pool: Pool | null = null;
 
 function buildDbConfig() {
-  return {
+  const config: any = {
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT || '5432'),
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    ssl: process.env.DB_SSL === 'true'
   };
+
+  // SSL Configuration for cloud databases (Kinsta, etc.)
+  if (process.env.DB_SSL === 'true') {
+    config.ssl = {
+      rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false', // Default: true, set to false for self-signed certs
+    };
+  } else {
+    config.ssl = false;
+  }
+
+  return config;
 }
 
 function validateEnv() {
@@ -40,7 +50,7 @@ export function getPool(): Pool {
       ...dbConfig,
       max: 20, // Maximum number of clients in the pool
       idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-      connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
+      connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established (increased for cloud DB)
     });
   }
   return pool;

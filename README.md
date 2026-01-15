@@ -120,13 +120,44 @@ Bitterrock/
    ```
 
 The application will be available at:
-- **Application**: http://localhost:3000
-- **API Routes**: http://localhost:3000/api/*
+- **Application**: http://localhost:3001
+- **API Routes**: http://localhost:3001/api/*
+
+### 🐳 Docker Installation (Alternative)
+
+สำหรับการใช้งาน Docker:
+
+1. **สร้างไฟล์ environment:**
+   ```bash
+   cp .docker.env.example .docker.env
+   # แก้ไข .docker.env ตามต้องการ
+   ```
+
+2. **เริ่มต้นด้วย Docker:**
+   ```bash
+   # Production mode
+   docker-compose --env-file .docker.env up --build -d
+   
+   # Development mode
+   docker-compose -f docker-compose.dev.yml --env-file .docker.env up --build
+   ```
+
+3. **หรือใช้สคริปต์ที่เตรียมไว้:**
+   ```bash
+   # Linux/Mac
+   chmod +x docker-start.sh docker-stop.sh
+   ./docker-start.sh
+   
+   # Windows (Git Bash)
+   bash docker-start.sh
+   ```
+
+ดูรายละเอียดเพิ่มเติมใน [DOCKER.md](./DOCKER.md)
 
 ## 📋 Available Scripts
 
 ### Development
-- `npm run dev` - Start Next.js development server (http://localhost:3000)
+- `npm run dev` - Start Next.js development server (http://localhost:3001)
 - `npm run build` - Build application for production
 - `npm run start` - Start production server
 
@@ -185,7 +216,7 @@ R2_PUBLIC_URL=your-public-url
 
 # Application Configuration
 NODE_ENV=development
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3001
 ```
 
 **Note:** Never commit `.env.local` files. Use `environment/.env.example` as a template.
@@ -285,7 +316,22 @@ npm run start
 - Set up SSL certificates for HTTPS
 - Configure domain and DNS settings
 
+### Docker Deployment
+```bash
+# Build and start with Docker
+docker-compose --env-file .docker.env up --build -d
+
+# View logs
+docker-compose --env-file .docker.env logs -f
+
+# Stop containers
+docker-compose --env-file .docker.env down
+```
+
+ดูรายละเอียดเพิ่มเติมใน [DOCKER.md](./DOCKER.md)
+
 ### Deployment Platforms
+- **Docker** (recommended for self-hosted)
 - **Vercel** (recommended for Next.js)
 - **AWS Amplify**
 - **Railway**
