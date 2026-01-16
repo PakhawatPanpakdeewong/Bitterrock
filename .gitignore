@@ -36,6 +36,12 @@ coverage/
 .tmp/
 .temp/
 
+# Next.js
+.next/
+out/
+.next/cache/
+*.tsbuildinfo
+
 # Misc
 *.swp
 *.swo

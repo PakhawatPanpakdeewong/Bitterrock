@@ -4,11 +4,14 @@ import { query } from '../../../database/connection';
 type DbVariant = {
   variant_id: number;
   product_id: number;
-  attribute_value_id: string;
   sku: string | null;
   price: string; // numeric comes back as string from pg
   image_url: string | null;
   is_active: boolean | null;
+  attribute_value_th: string | null;
+  attribute_value_en: string | null;
+  attribute_name_th: string | null;
+  attribute_name_en: string | null;
 };
 
 export async function GET(req: NextRequest) {
@@ -20,13 +23,16 @@ export async function GET(req: NextRequest) {
 
     // Using lowercase column names without underscores
     let sql = `
-      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.attributevalueid as attribute_value_id, pv.sku, pv.price, pv.isactive as is_active,
+      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, pv.isactive as is_active,
              p.productnameth as product_name_th,
-             av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en,
-             a.attributenameth as attribute_name_th, a.attributenameen as attribute_name_en
+             STRING_AGG(DISTINCT av.attributevalueth, ', ' ORDER BY av.attributevalueth) as attribute_value_th,
+             STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
+             STRING_AGG(DISTINCT a.attributenameth, ', ' ORDER BY a.attributenameth) as attribute_name_th,
+             STRING_AGG(DISTINCT a.attributenameen, ', ' ORDER BY a.attributenameen) as attribute_name_en
       FROM productvariants pv
       LEFT JOIN products p ON p.productid = pv.productid
-      LEFT JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
+      LEFT JOIN productvariantattributes pva ON pva.variantid = pv.variantid
+      LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
       LEFT JOIN attributes a ON a.attributeid = av.attributeid
     `;
     
@@ -36,29 +42,30 @@ export async function GET(req: NextRequest) {
       params.push(Number(productId));
     }
     
-    sql += ` ORDER BY pv.variantid LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    sql += ` GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.isactive, p.productnameth
+             ORDER BY pv.variantid LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
     const result = await query(sql, params);
     const variants = result.rows as Array<{
       variant_id: number;
       product_id: number;
-      attribute_value_id: number;
       sku: string | null;
       price: string;
       image_url?: string | null;
       is_active: boolean | null;
       product_name_th: string;
-      attribute_name_th: string;
-      attribute_value_th: string;
+      attribute_name_th: string | null;
+      attribute_value_th: string | null;
     }>;
 
     const items = variants.map((v) => ({
       variant_id: v.variant_id,
       product_id: v.product_id,
       product_name_th: v.product_name_th,
-      attribute_value_id: v.attribute_value_id,
-      attribute_label: `${v.attribute_name_th}: ${v.attribute_value_th}`,
+      attribute_label: v.attribute_name_th && v.attribute_value_th 
+        ? `${v.attribute_name_th}: ${v.attribute_value_th}` 
+        : null,
       sku: v.sku,
       price: Number(v.price),
       image_url: v.image_url ?? null,
@@ -77,29 +84,53 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       product_id,
-      attribute_value_id,
+      attribute_value_ids, // Can be array or single value
       sku = null,
       price,
       image_url = null,
       is_active = true,
     } = body || {};
 
-    if (!product_id || !attribute_value_id) {
-      return NextResponse.json({ ok: false, error: 'product_id and attribute_value_id are required' }, { status: 400 });
+    if (!product_id) {
+      return NextResponse.json({ ok: false, error: 'product_id is required' }, { status: 400 });
     }
     if (price === undefined || price === null || Number.isNaN(Number(price))) {
       return NextResponse.json({ ok: false, error: 'price is required and must be a number' }, { status: 400 });
     }
+    if (!sku || sku.trim() === '') {
+      return NextResponse.json({ ok: false, error: 'sku is required' }, { status: 400 });
+    }
 
+    // Normalize attribute_value_ids to array
+    const attributeValueIds = Array.isArray(attribute_value_ids) 
+      ? attribute_value_ids 
+      : attribute_value_ids 
+        ? [attribute_value_ids] 
+        : [];
+
+    // Insert variant first (without attributes)
     const insertRes = await query(
-      `INSERT INTO productvariants (productid, attributevalueid, sku, price, isactive)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO productvariants (productid, sku, price, isactive)
+       VALUES ($1, $2, $3, $4)
        RETURNING variantid as variant_id`,
-      [Number(product_id), attribute_value_id, sku, Number(price), is_active]
+      [Number(product_id), sku, Number(price), is_active]
     );
 
-    const newId = insertRes.rows[0]?.variant_id;
-    return NextResponse.json({ ok: true, id: newId });
+    const variantId = insertRes.rows[0].variant_id;
+
+    // Insert attributes if provided
+    if (attributeValueIds.length > 0) {
+      for (const attributeValueId of attributeValueIds) {
+        await query(
+          `INSERT INTO productvariantattributes (variantid, attributevalueid)
+           VALUES ($1, $2)
+           ON CONFLICT (variantid, attributevalueid) DO NOTHING`,
+          [variantId, Number(attributeValueId)]
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: true, id: variantId });
   } catch (error: any) {
     const message = error?.message || 'Unknown error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

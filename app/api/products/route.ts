@@ -7,19 +7,16 @@ type DbProduct = {
   product_name_th: string;
   product_name_en: string;
   description: string | null;
-  base_sku: string | null;
-  base_price: string;
   sub_category_name: string | null;
 };
 
 type DbVariant = {
   variant_id: number;
   product_id: number;
-  attribute_value_id: string;
-  attribute_name_th: string;
-  attribute_name_en: string;
-  attribute_value_th: string;
-  attribute_value_en: string;
+  attribute_name_th: string | null;
+  attribute_name_en: string | null;
+  attribute_value_th: string | null;
+  attribute_value_en: string | null;
   sku: string | null;
   price: string; // numeric
   image_url: string | null;
@@ -53,23 +50,14 @@ export async function GET(req: NextRequest) {
     p.productnameth as product_name_th,
     p.productnameen as product_name_en,
     p.description,
-    p.basesku as base_sku,
-    p.baseprice as base_price,
     sc.subcategorynameth as sub_category_name,
     pv.variantid as variant_id,
-    pv.attributevalueid as attribute_value_id,
     pv.sku as variant_sku,
     pv.price as variant_price,
-    pv.isactive as variant_is_active,
-    av.attributevalueth as attribute_value_th,
-    av.attributevalueen as attribute_value_en,
-    a.attributenameth as attribute_name_th,
-    a.attributenameen as attribute_name_en
+    pv.isactive as variant_is_active
    FROM products p
    LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
    LEFT JOIN productvariants pv ON pv.productid = p.productid
-   LEFT JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
-   LEFT JOIN attributes a ON a.attributeid = av.attributeid
    ${whereSql}
    ORDER BY p.productid, pv.variantid
    LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -94,13 +82,17 @@ export async function GET(req: NextRequest) {
 
     // Fetch variants for these products; join attribute values and attributes for labels - using lowercase column names without underscores
     const variantsRes = await query(
-      `SELECT pv.variantid as variant_id, pv.productid as product_id, pv.attributevalueid as attribute_value_id, pv.sku, pv.price, NULL as image_url, pv.isactive as is_active,
-              av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en,
-              a.attributenameth as attribute_name_th, a.attributenameen as attribute_name_en
+      `SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, NULL as image_url, pv.isactive as is_active,
+              STRING_AGG(DISTINCT av.attributevalueth, ', ' ORDER BY av.attributevalueth) as attribute_value_th,
+              STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
+              STRING_AGG(DISTINCT a.attributenameth, ', ' ORDER BY a.attributenameth) as attribute_name_th,
+              STRING_AGG(DISTINCT a.attributenameen, ', ' ORDER BY a.attributenameen) as attribute_name_en
        FROM productvariants pv
-       JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
-       JOIN attributes a ON a.attributeid = av.attributeid
+       LEFT JOIN productvariantattributes pva ON pva.variantid = pv.variantid
+       LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
+       LEFT JOIN attributes a ON a.attributeid = av.attributeid
        WHERE pv.productid = ANY($1::int[])
+       GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.isactive
        ORDER BY pv.productid, pv.variantid`,
       [productIds]
     );
@@ -119,11 +111,11 @@ export async function GET(req: NextRequest) {
       product_name_th: p.product_name_th,
       product_name_en: p.product_name_en,
       description: p.description,
-      base_sku: p.base_sku,
-      base_price: Number(p.base_price),
       variants: (productIdToVariants[p.product_id] || []).map((v) => ({
         variant_id: v.variant_id,
-        variant_name: `${v.attribute_name_th}: ${v.attribute_value_th}`,
+        variant_name: v.attribute_name_th && v.attribute_value_th 
+          ? `${v.attribute_name_th}: ${v.attribute_value_th}` 
+          : v.sku || `Variant ${v.variant_id}`,
         sku: v.sku,
         price: Number(v.price),
         image_url: v.image_url,
@@ -147,30 +139,11 @@ export async function POST(req: NextRequest) {
     console.log('🔍 DEBUG: Received POST request body:', body);
     const {
       sub_category_id = null,
+      brand_id = null,
       product_name_th,
       product_name_en,
       description = null,
-      base_sku = null,
-      base_price,
     } = body || {};
-
-    // COMMENTED OUT ALL VALIDATIONS FOR DEBUGGING
-    // if (!product_name_th || !product_name_en) {
-    //   return NextResponse.json({ ok: false, error: 'product_name_th and product_name_en are required' }, { status: 400 });
-    // }
-    // if (base_price === undefined || base_price === null || Number.isNaN(Number(base_price))) {
-    //   return NextResponse.json({ ok: false, error: 'base_price is required and must be a number' }, { status: 400 });
-    // }
-
-    const coercedBasePrice = Number(base_price || 0);
-    // if (coercedBasePrice < 0) {
-    //   return NextResponse.json({ ok: false, error: 'base_price must be >= 0' }, { status: 400 });
-    // }
-
-    const trimmedSku = typeof base_sku === 'string' ? base_sku.trim() : base_sku;
-    // if (trimmedSku && trimmedSku.length > 10) {
-    //   return NextResponse.json({ ok: false, error: 'base_sku must be at most 10 characters' }, { status: 400 });
-    // }
 
     // Convert sub_category_id to number or null
     let coercedSubCategoryId: number | null = null;
@@ -183,6 +156,18 @@ export async function POST(req: NextRequest) {
         coercedSubCategoryId = null;
       }
     }
+
+    // Convert brand_id to number or null
+    let coercedBrandId: number | null = null;
+    if (brand_id !== null && brand_id !== undefined && brand_id !== '') {
+      const numValue = Number(brand_id);
+      if (!Number.isNaN(numValue)) {
+        coercedBrandId = numValue;
+      } else {
+        console.warn('⚠️ WARNING: brand_id is not a valid number:', brand_id);
+        coercedBrandId = null;
+      }
+    }
     
     console.log('🔍 DEBUG: Sub Category ID in API:', {
       received: sub_category_id,
@@ -190,13 +175,19 @@ export async function POST(req: NextRequest) {
       coerced: coercedSubCategoryId,
       isNull: coercedSubCategoryId === null
     });
+    console.log('🔍 DEBUG: Brand ID in API:', {
+      received: brand_id,
+      type: typeof brand_id,
+      coerced: coercedBrandId,
+      isNull: coercedBrandId === null
+    });
 
     try {
-      const insertValues = [coercedSubCategoryId, product_name_th, product_name_en, description, trimmedSku ?? null, coercedBasePrice];
+      const insertValues = [coercedBrandId, coercedSubCategoryId, product_name_th, product_name_en, description];
       console.log('🔍 DEBUG: Insert values:', insertValues);
       const insertRes = await query(
-        `INSERT INTO products (subcategoryid, productnameth, productnameen, description, basesku, baseprice)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO products (brandid, subcategoryid, productnameth, productnameen, description)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING productid as product_id`,
         insertValues
       );
@@ -272,8 +263,6 @@ export async function PUT(req: NextRequest) {
       product_name_th: 'productnameth',
       product_name_en: 'productnameen',
       description: 'description',
-      base_sku: 'basesku',
-      base_price: 'baseprice',
     };
 
     const updatable = {
@@ -281,8 +270,6 @@ export async function PUT(req: NextRequest) {
       product_name_th: body?.product_name_th,
       product_name_en: body?.product_name_en,
       description: body?.description,
-      base_sku: body?.base_sku,
-      base_price: body?.base_price !== undefined ? Number(body?.base_price) : undefined,
     } as Record<string, any>;
 
     for (const [key, value] of Object.entries(updatable)) {

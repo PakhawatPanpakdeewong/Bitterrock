@@ -36,26 +36,21 @@ services:
     env_file:
       - .docker.env
     ports:
-      - "${APP_PORT:-3001}:3001"
+      - "3001:3001"
     environment:
       - NODE_ENV=production
-      - DB_HOST=${DB_HOST:-postgres}
-      - DB_PORT=${DB_PORT:-5432}
-      - DB_NAME=${DB_NAME:-bitterrock_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_SSL=${DB_SSL:-false}
-      - DB_SSL_REJECT_UNAUTHORIZED=${DB_SSL_REJECT_UNAUTHORIZED:-true}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
-      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-}
-      - R2_ENDPOINT=${R2_ENDPOINT:-}
-      - R2_PUBLIC_URL=${R2_PUBLIC_URL:-}
-    # depends_on:  # Comment out if using external database
-    #   postgres:
-    #     condition: service_healthy
+      - DB_HOST=asia-southeast1-001.proxy.kinsta.app
+      - DB_PORT=30339
+      - DB_NAME=bare-magenta-magpie
+      - DB_USER=viper
+      - DB_PASSWORD=jP6=zZ4+hJ2_aD1-uM9+
+      - DB_SSL=false
+      - NEXT_PUBLIC_APP_URL=http://localhost:3001
+      - R2_ACCESS_KEY_ID=f950fd678c608767ef973a91421097cc
+      - R2_SECRET_ACCESS_KEY=5f6a85702d09715210c607aa6655e706e92b993588312c872a3ac2351d045e95
+      - R2_ENDPOINT=https://f6d1d15e6f0b37b4b8fcad3c41a7922d.r2.cloudflarestorage.com
+      - R2_BUCKET_NAME=apple-gold-anteater-it815
+      - R2_PUBLIC_BASE=https://apple-gold-anteater-it815.sevalla.storage
     networks:
       - bitterrock-network
     volumes:

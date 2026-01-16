@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       sql += ` WHERE sc.categoryid = $1`;
       params.push(parseInt(categoryIdParam));
     }
-    sql += ` ORDER BY c.categorynameth NULLS LAST, sc.subcategorynameth`;
+    sql += ` ORDER BY sc.categoryid, sc.subcategoryid`;
 
     const result = await query(sql, params);
 

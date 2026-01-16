@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
         av.attributeid as attribute_id,
         av.attributevalueth as attribute_value_th,
         av.attributevalueen as attribute_value_en,
+        av.attributevaluecode as attribute_value_code,
         a.attributenameth as attribute_name_th,
         a.attributenameen as attribute_name_en
       FROM attributevalues av
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
       sql += ` WHERE av.attributeid = $1`;
       params.push(parseInt(attributeIdParam));
     }
-    sql += ` ORDER BY a.attributenameth NULLS LAST, av.attributevalueth`;
+    sql += ` ORDER BY av.attributeid, av.attributevalueid`;
 
     const result = await query(sql, params);
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { attribute_id, attribute_value_th, attribute_value_en } = body;
+    const { attribute_id, attribute_value_th, attribute_value_en, attribute_value_code } = body;
 
     // Validate required fields
     if (!attribute_id) {
@@ -81,6 +82,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate attribute_value_code: alphanumeric only, exactly 3 characters
+    const codePattern = /^[A-Za-z0-9]{3}$/;
+    if (!attribute_value_code || attribute_value_code.trim() === '') {
+      return NextResponse.json(
+        { success: false, error: 'Attribute value code is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!codePattern.test(attribute_value_code.trim())) {
+      return NextResponse.json(
+        { success: false, error: 'Attribute value code must be exactly 3 alphanumeric characters' },
+        { status: 400 }
+      );
+    }
+
     // Check if attribute exists
     const attributeExists = await query(
       'SELECT attributeid FROM attributes WHERE attributeid = $1',
@@ -96,10 +113,10 @@ export async function POST(request: NextRequest) {
 
     // Insert new attribute value (attributevalueid is SERIAL, auto-generated)
     const result = await query(
-      `INSERT INTO attributevalues (attributeid, attributevalueth, attributevalueen) 
-       VALUES ($1, $2, $3) 
-       RETURNING attributevalueid as attribute_value_id, attributeid as attribute_id, attributevalueth as attribute_value_th, attributevalueen as attribute_value_en`,
-      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim()]
+      `INSERT INTO attributevalues (attributeid, attributevalueth, attributevalueen, attributevaluecode) 
+       VALUES ($1, $2, $3, $4) 
+       RETURNING attributevalueid as attribute_value_id, attributeid as attribute_id, attributevalueth as attribute_value_th, attributevalueen as attribute_value_en, attributevaluecode as attribute_value_code`,
+      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim(), attribute_value_code.trim().toUpperCase()]
     );
 
     return NextResponse.json({
@@ -125,7 +142,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { attribute_value_id, attribute_id, attribute_value_th, attribute_value_en } = body;
+    const { attribute_value_id, attribute_id, attribute_value_th, attribute_value_en, attribute_value_code } = body;
 
     // Validate required fields
     if (!attribute_value_id) {
@@ -152,6 +169,22 @@ export async function PUT(request: NextRequest) {
     if (!attribute_value_en || attribute_value_en.trim() === '') {
       return NextResponse.json(
         { success: false, error: 'Attribute value (English) is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate attribute_value_code: alphanumeric only, exactly 3 characters
+    const codePattern = /^[A-Za-z0-9]{3}$/;
+    if (!attribute_value_code || attribute_value_code.trim() === '') {
+      return NextResponse.json(
+        { success: false, error: 'Attribute value code is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!codePattern.test(attribute_value_code.trim())) {
+      return NextResponse.json(
+        { success: false, error: 'Attribute value code must be exactly 3 alphanumeric characters' },
         { status: 400 }
       );
     }
@@ -185,10 +218,10 @@ export async function PUT(request: NextRequest) {
     // Update attribute value
     const result = await query(
       `UPDATE attributevalues 
-       SET attributeid = $1, attributevalueth = $2, attributevalueen = $3
-       WHERE attributevalueid = $4
-       RETURNING attributevalueid as attribute_value_id, attributeid as attribute_id, attributevalueth as attribute_value_th, attributevalueen as attribute_value_en`,
-      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim(), parseInt(attribute_value_id)]
+       SET attributeid = $1, attributevalueth = $2, attributevalueen = $3, attributevaluecode = $4
+       WHERE attributevalueid = $5
+       RETURNING attributevalueid as attribute_value_id, attributeid as attribute_id, attributevalueth as attribute_value_th, attributevalueen as attribute_value_en, attributevaluecode as attribute_value_code`,
+      [parseInt(attribute_id), attribute_value_th.trim(), attribute_value_en.trim(), attribute_value_code.trim().toUpperCase(), parseInt(attribute_value_id)]
     );
 
     return NextResponse.json({

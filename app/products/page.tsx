@@ -31,8 +31,6 @@ type Product = {
   product_name_th: string;
   product_name_en: string;
   description: string | null;
-  base_sku: string | null;
-  base_price: number;
   variants: Variant[];
 };
 
@@ -52,11 +50,13 @@ export default function ProductsPage() {
     base_sku: "",
     description: "",
     sub_category_id: "",
+    brand_id: "",
   });
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState<boolean>(false);
-  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1);
+  const [createStep, setCreateStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step2ValidationAttempted, setStep2ValidationAttempted] = useState<boolean>(false);
   const [editForm, setEditForm] = useState<null | (Product & {
     product_name_th?: string;
     product_name_en?: string;
@@ -73,12 +73,26 @@ export default function ProductsPage() {
   // Catalog data for create step 1 (declare before effects that use them)
   type UiCategory = { category_id: number; category_name: string };
   type UiSubCategory = { sub_category_id: string; sub_category_name: string; category_id: number | null };
+  type UiBrand = { brand_id: number; brand_name_th: string; brand_name_en: string; brand_code: string };
   const [categories, setCategories] = useState<UiCategory[]>([]);
   const [subCategories, setSubCategories] = useState<UiSubCategory[]>([]);
+  const [brands, setBrands] = useState<UiBrand[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>("");
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [catalogLoading, setCatalogLoading] = useState<boolean>(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [selectedMainAttribute, setSelectedMainAttribute] = useState<string>("");
+  const [variantPrice, setVariantPrice] = useState<string>("");
+  const [variantIsActive, setVariantIsActive] = useState<boolean>(true);
+  const [isAddBrandModalOpen, setIsAddBrandModalOpen] = useState<boolean>(false);
+  const [newBrandForm, setNewBrandForm] = useState({
+    brand_name_th: "",
+    brand_name_en: "",
+    brand_code: "",
+  });
+  const [newBrandSubmitting, setNewBrandSubmitting] = useState<boolean>(false);
+  const [newBrandError, setNewBrandError] = useState<string | null>(null);
   // Attributes for step 3
   type UiAttribute = { 
     attribute_id: number; 
@@ -91,6 +105,7 @@ export default function ProductsPage() {
     attribute_id: number; 
     attribute_value_th: string; 
     attribute_value_en: string;
+    attribute_value_code?: string;
   };
   const [attributes, setAttributes] = useState<UiAttribute[]>([]);
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({}); // attribute_id -> attribute_value_id
@@ -166,6 +181,81 @@ export default function ProductsPage() {
     return () => { active = false };
   }, [createOpen, selectedCategoryId]);
 
+  // Load brands when subcategory is selected
+  const fetchBrands = async () => {
+    if (!createOpen || !selectedSubCategoryId) {
+      setBrands([]);
+      return;
+    }
+    try {
+      setCatalogLoading(true);
+      setCatalogError(null);
+      const brandRes = await fetch(`/api/brands?subcategory_id=${encodeURIComponent(selectedSubCategoryId)}`);
+      const brandJson = await brandRes.json();
+      if (!brandJson.success) throw new Error(brandJson.error || 'โหลดแบรนด์ไม่สำเร็จ');
+      setBrands(Array.isArray(brandJson.data) ? brandJson.data : []);
+    } catch (e: any) {
+      setCatalogError(e?.message || 'โหลดแบรนด์ไม่สำเร็จ');
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBrands();
+  }, [createOpen, selectedSubCategoryId]);
+
+  const handleAddNewBrand = async () => {
+    if (!newBrandForm.brand_name_th.trim() || !newBrandForm.brand_name_en.trim() || !newBrandForm.brand_code.trim()) {
+      setNewBrandError('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    // Validate brand_code: alphanumeric only, exactly 3 characters
+    const codePattern = /^[A-Z0-9]{3}$/;
+    if (!codePattern.test(newBrandForm.brand_code.trim().toUpperCase())) {
+      setNewBrandError('รหัสแบรนด์ต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข 3 ตัวเท่านั้น');
+      return;
+    }
+
+    try {
+      setNewBrandSubmitting(true);
+      setNewBrandError(null);
+      const response = await fetch('/api/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brand_name_th: newBrandForm.brand_name_th.trim(),
+          brand_name_en: newBrandForm.brand_name_en.trim(),
+          brand_code: newBrandForm.brand_code.trim().toUpperCase(),
+          sub_category_id: selectedSubCategoryId || undefined,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Refresh brands list
+        await fetchBrands();
+        // Select the newly created brand
+        if (result.data?.brand_id) {
+          setSelectedBrandId(String(result.data.brand_id));
+          setCreateForm((f) => ({ ...f, brand_id: String(result.data.brand_id) }));
+        }
+        // Close modal and reset form
+        setIsAddBrandModalOpen(false);
+        setNewBrandForm({ brand_name_th: "", brand_name_en: "", brand_code: "" });
+        setNewBrandError(null);
+      } else {
+        setNewBrandError(result.error || 'Failed to create brand');
+      }
+    } catch (err) {
+      setNewBrandError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setNewBrandSubmitting(false);
+    }
+  };
+
   // Load attributes when step 3 is reached
   useEffect(() => {
     if (createStep !== 3) return;
@@ -177,6 +267,7 @@ export default function ProductsPage() {
         const res = await fetch('/api/attributes?include_values=true');
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || 'โหลดแอตทริบิวต์ไม่สำเร็จ');
+        // Attributes API now includes attribute_value_code, so we can use it directly
         if (active) setAttributes(json.items || []);
       } catch (e: any) {
         if (active) setAttributesError(e?.message || 'โหลดแอตทริบิวต์ไม่สำเร็จ');
@@ -220,28 +311,6 @@ export default function ProductsPage() {
     try {
       setBusy(true);
       
-      // Generate BASE SKU
-      const baseSku = generateBaseSku(selectedSubCategoryId, createForm.product_name_en);
-      
-      // Upload image if provided
-      let imageUrl = null;
-      if (uploadedImage) {
-        const formData = new FormData();
-        formData.append('file', uploadedImage);
-        formData.append('newName', `${baseSku}.jpg`);
-        
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        const uploadData = await uploadRes.json();
-        if (!uploadData.ok) {
-          throw new Error(uploadData.error || 'อัปโหลดรูปภาพไม่สำเร็จ');
-        }
-        imageUrl = uploadData.url;
-      }
-      
       // Convert sub_category_id to number or null
       const rawSubCategoryId = createForm.sub_category_id || selectedSubCategoryId || '';
       const subCategoryIdValue = rawSubCategoryId && String(rawSubCategoryId).trim() !== '' 
@@ -256,13 +325,16 @@ export default function ProductsPage() {
         isNaN: subCategoryIdValue !== null && Number.isNaN(subCategoryIdValue)
       });
 
+      const brandIdValue = selectedBrandId && String(selectedBrandId).trim() !== '' && selectedBrandId !== 'non-brand'
+        ? Number(String(selectedBrandId).trim()) 
+        : null;
+
       const payload = {
         product_name_th: createForm.product_name_th?.trim() || '',
         product_name_en: createForm.product_name_en?.trim() || '',
-        base_price: Number(createForm.base_price || 0),
-        base_sku: baseSku || null,
         description: createForm.description?.trim() || null,
         sub_category_id: subCategoryIdValue,
+        brand_id: brandIdValue,
       };
       // COMMENTED OUT ALL VALIDATIONS FOR DEBUGGING
       // if (!selectedCategoryId || !selectedSubCategoryId) {
@@ -288,47 +360,93 @@ export default function ProductsPage() {
       }
       console.log('✅ SUCCESS: Product created with ID:', data.id);
       
-      // If product created successfully and we have selected attributes, create variants
-      if (data.id && Object.keys(selectedAttributes).some(key => selectedAttributes[key])) {
+      // Create variant with attributes if product created successfully
+      if (data.id) {
         const productId = data.id;
         const selectedAttributeValues = Object.values(selectedAttributes).filter(val => val && val !== "");
         
-        if (selectedAttributeValues.length > 0) {
-          // Create a variant for each selected attribute value
-          for (const attributeValueId of selectedAttributeValues) {
-            const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(selectedSubCategoryId));
-            const subName = subCategory?.sub_category_name || "";
-            const alphaFromSub = (subName.replace(/[^A-Za-z]/g, "").toUpperCase() + "XXX").slice(0, 3);
-            const productPrefix = createForm.product_name_en.substring(0, 3).toUpperCase();
-            const variantPayload = {
-              product_id: productId,
-              attribute_value_id: attributeValueId,
-              sku: `${alphaFromSub}-${productPrefix}-${attributeValueId}`,
-              price: Number(createForm.base_price || 0),
-              image_url: null,
-              is_active: true
-            };
-            
-            const variantRes = await fetch("/api/product-variants", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(variantPayload),
-            });
-            
-            if (!variantRes.ok) {
-              console.warn(`Failed to create variant for attribute ${attributeValueId}`);
+        // Generate SKU using SubcategoryID - BrandCode - AttributeValueCode format
+        // Pad SubcategoryID with zeros to 3 digits (e.g., 9 -> 009, 12 -> 012)
+        const subCategoryIdPadded = subCategoryIdValue 
+          ? String(subCategoryIdValue).padStart(3, '0')
+          : "000";
+        
+        const brandCode = selectedBrandId === 'non-brand' 
+          ? "NBR" 
+          : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
+        
+        // Get attribute value codes from selected attributes
+        const selectedAttributeValueIds = Object.values(selectedAttributes).filter(val => val && val !== "");
+        const attributeValueCodes: string[] = [];
+        
+        // Find attribute value codes for selected values
+        for (const attrValueId of selectedAttributeValueIds) {
+          for (const attr of attributes) {
+            const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
+            if (attrValue?.attribute_value_code) {
+              attributeValueCodes.push(attrValue.attribute_value_code);
+              break;
             }
+          }
+        }
+        
+        // Use first attribute value code, or "XX" if none selected
+        const attributeCode = attributeValueCodes.length > 0 ? attributeValueCodes[0] : "XX";
+        
+        const variantSku = `${subCategoryIdPadded}-${brandCode}-${attributeCode}`;
+        
+        // Create variant with attributes
+        const variantPayload = {
+          product_id: productId,
+          attribute_value_ids: selectedAttributeValues.length > 0 ? selectedAttributeValues : [],
+          sku: variantSku,
+          price: Number(variantPrice || 0),
+          is_active: variantIsActive
+        };
+        
+        const variantRes = await fetch("/api/product-variants", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(variantPayload),
+        });
+        
+        if (!variantRes.ok) {
+          const variantError = await variantRes.json();
+          throw new Error(variantError.error || 'สร้าง variant ไม่สำเร็จ');
+        }
+        
+        const variantData = await variantRes.json();
+        
+        // Upload image if provided (use variant SKU)
+        if (uploadedImage && variantData.id) {
+          const formData = new FormData();
+          formData.append('file', uploadedImage);
+          formData.append('newName', `${variantSku}.jpg`);
+          
+          const uploadRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+          
+          const uploadData = await uploadRes.json();
+          if (!uploadData.ok) {
+            console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
           }
         }
       }
       
-      setCreateForm({ product_name_th: "", product_name_en: "", base_price: "", base_sku: "", description: "", sub_category_id: "" });
+      setCreateForm({ product_name_th: "", product_name_en: "", base_price: "", base_sku: "", description: "", sub_category_id: "", brand_id: "" });
       setSelectedCategoryId("");
       setSelectedSubCategoryId("");
+      setSelectedBrandId("");
       setSelectedAttributes({});
+      setSelectedMainAttribute("");
+      setVariantPrice("");
+      setVariantIsActive(true);
       setUploadedImage(null);
       setImagePreview(null);
       setCreateStep(1);
+      setStep2ValidationAttempted(false);
       await refetchProducts();
     } catch (e: any) {
       setError(e?.message || "สร้างสินค้าไม่สำเร็จ");
@@ -356,36 +474,37 @@ export default function ProductsPage() {
     setDeleteOpen(true);
   };
 
-  // Generate BASE SKU prefix (XXX-XXX) for Step 2 preview
-  const generateBaseSkuPrefix = (subCategoryId: string | number | null | undefined, productNameEn: string | null | undefined) => {
-    const nameStr = String(productNameEn ?? "");
-    if (!subCategoryId || nameStr.length < 3) return "";
-
-    const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(subCategoryId));
-    const subName = subCategory?.sub_category_name || "";
-    const alphaFromSub = (subName.replace(/[^A-Za-z]/g, "").toUpperCase() + "XXX").slice(0, 3);
-    const productPrefix = nameStr.slice(0, 3).toUpperCase();
-
-    return `${alphaFromSub}-${productPrefix}-`;
+  // Generate BASE SKU prefix (BRAND-ATTR) for Step 2 preview
+  const generateBaseSkuPrefix = (brandId: string | number | null | undefined) => {
+    if (!brandId || brandId === 'non-brand') return "NBR-";
+    const selectedBrand = brands.find((b) => String(b.brand_id) === String(brandId));
+    const brandCode = selectedBrand?.brand_code || "XXX";
+    return `${brandCode}-`;
   };
 
-  // Generate complete BASE SKU in XXX-XXX-YY format (for Step 3)
-  const generateBaseSku = (subCategoryId: string | number | null | undefined, productNameEn: string | null | undefined) => {
-    if (!subCategoryId) return "";
-    const nameStr = String(productNameEn ?? "");
-    if (nameStr.length < 3) return "";
-
-    const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(subCategoryId));
-    const subName = subCategory?.sub_category_name || "";
-    const alphaFromSub = (subName.replace(/[^A-Za-z]/g, "").toUpperCase() + "XXX").slice(0, 3);
-    const productPrefix = nameStr.slice(0, 3).toUpperCase();
-
-    const randomLetters = String.fromCharCode(
-      65 + Math.floor(Math.random() * 26),
-      65 + Math.floor(Math.random() * 26)
-    );
-
-    return `${alphaFromSub}-${productPrefix}-${randomLetters}`;
+  // Generate complete BASE SKU in BRAND-ATTR format (for Step 3)
+  const generateBaseSku = (brandId: string | number | null | undefined, selectedAttributeValueIds: string[]) => {
+    if (!brandId) return "";
+    const brandCode = brandId === 'non-brand' 
+      ? "NBR" 
+      : (brands.find((b) => String(b.brand_id) === String(brandId))?.brand_code || "XXX");
+    
+    // Get first attribute value code
+    let attributeCode = "XX";
+    if (selectedAttributeValueIds.length > 0) {
+      for (const attrValueId of selectedAttributeValueIds) {
+        for (const attr of attributes) {
+          const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
+          if (attrValue?.attribute_value_code) {
+            attributeCode = attrValue.attribute_value_code;
+            break;
+          }
+        }
+        if (attributeCode !== "XX") break;
+      }
+    }
+    
+    return `${brandCode}-${attributeCode}`;
   };
 
   // Handle image upload
@@ -433,9 +552,7 @@ export default function ProductsPage() {
         product_id: editForm.id,
         product_name_th: editForm.product_name_th?.trim() || editForm.product_name?.trim(),
         product_name_en: editForm.product_name_en?.trim() || editForm.product_name?.trim(),
-        base_sku: editForm.base_sku || null,
         description: editForm.description || null,
-        base_price: editForm.base_price,
       };
       const res = await fetch("/api/products", {
         method: "PUT",
@@ -478,7 +595,7 @@ export default function ProductsPage() {
       const matchesSearch = 
         product.product_name_th?.toLowerCase().includes(query) ||
         product.product_name_en?.toLowerCase().includes(query) ||
-        product.base_sku?.toLowerCase().includes(query);
+        product.variants?.some(v => v.sku?.toLowerCase().includes(query));
       if (!matchesSearch) return false;
     }
     return true;
@@ -556,7 +673,11 @@ export default function ProductsPage() {
           </Button>
           {/* Add Product Button */}
           <Button 
-            onClick={() => setCreateOpen(true)}
+            onClick={() => {
+              setCreateOpen(true);
+              setStep2ValidationAttempted(false);
+              setCreateStep(1);
+            }}
             className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -572,10 +693,14 @@ export default function ProductsPage() {
         // Picture View - Grid of images only
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
           {filteredProducts.map((product) => {
-            // Try to find image by BASE SKU first, then fallback to variant image
-            const skuImage = findImageBySku(product.base_sku);
+            // Try to find image by variant SKU first, then fallback to variant image
+            const firstVariant = product.variants?.[0];
+            const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
             const variantImage = product.variants?.find(v => v.image_url)?.image_url;
             const productImage = skuImage || variantImage;
+            const minPrice = product.variants?.length > 0 
+              ? Math.min(...product.variants.map(v => v.price))
+              : 0;
             
             return (
               <div
@@ -596,9 +721,13 @@ export default function ProductsPage() {
                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-end pointer-events-none">
                   <div className="p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full">
                     <div className="text-xs font-medium leading-tight break-words line-clamp-2">{product.product_name}</div>
-                    <div className="text-xs mt-1 font-semibold">{product.base_price.toFixed(2)} ฿</div>
-                    {product.base_sku && (
-                      <div className="text-xs mt-1 opacity-75">SKU: {product.base_sku}</div>
+                    {product.variants && product.variants.length > 0 && (
+                      <>
+                        <div className="text-xs mt-1 font-semibold">{minPrice.toFixed(2)} ฿</div>
+                        {firstVariant?.sku && (
+                          <div className="text-xs mt-1 opacity-75">SKU: {firstVariant.sku}</div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -610,10 +739,17 @@ export default function ProductsPage() {
         // Card View - Detailed cards
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
           {filteredProducts.map((product) => {
-            // Try to find image by BASE SKU first, then fallback to variant image
-            const skuImage = findImageBySku(product.base_sku);
+            // Try to find image by variant SKU first, then fallback to variant image
+            const firstVariant = product.variants?.[0];
+            const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
             const variantImage = product.variants?.find(v => v.image_url)?.image_url;
             const productImage = skuImage || variantImage;
+            const minPrice = product.variants?.length > 0 
+              ? Math.min(...product.variants.map(v => v.price))
+              : 0;
+            const maxPrice = product.variants?.length > 0 
+              ? Math.max(...product.variants.map(v => v.price))
+              : 0;
             
             return (
               <Card 
@@ -638,8 +774,19 @@ export default function ProductsPage() {
                       <h2 className="text-base font-semibold line-clamp-2">{product.product_name}</h2>
                       <p className="text-gray-600 text-xs line-clamp-3 flex-1">{product.description}</p>
                       <div className="flex flex-col gap-1 text-sm text-gray-700">
-                        <span className="truncate">SKU: <span className="font-medium">{product.base_sku}</span></span>
-                        <span className="text-gray-600">ราคาเริ่มต้น : <span className="font-bold text-blue-600">{product.base_price.toFixed(2)} ฿</span></span>
+                        {firstVariant?.sku && (
+                          <span className="truncate">SKU: <span className="font-medium">{firstVariant.sku}</span></span>
+                        )}
+                        {product.variants && product.variants.length > 0 && (
+                          <span className="text-gray-600">
+                            ราคา: <span className="font-bold text-blue-600">
+                              {minPrice === maxPrice 
+                                ? `${minPrice.toFixed(2)} ฿`
+                                : `${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)} ฿`
+                              }
+                            </span>
+                          </span>
+                        )}
                       </div>
                       
                     </div>
@@ -672,20 +819,6 @@ export default function ProductsPage() {
                   onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_en: e.target.value }) : f)} 
                 />
               </div>
-              <div>
-                <Label htmlFor="edit_sku">Base SKU</Label>
-                <Input 
-                  id="edit_sku" 
-                  value={editForm.base_sku || ""} 
-                  readOnly
-                  className="bg-gray-100 cursor-not-allowed"
-                  placeholder="Auto-generated SKU"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_price">ราคาเริ่มต้น</Label>
-                <Input id="edit_price" type="number" step="0.01" value={String(editForm.base_price)} onChange={(e) => setEditForm((f) => f ? ({ ...f, base_price: Number(e.target.value || 0) }) : f)} />
-              </div>
               <div className="md:col-span-2">
                 <Label htmlFor="edit_desc">รายละเอียด</Label>
                 <Textarea id="edit_desc" value={editForm.description || ""} onChange={(e) => setEditForm((f) => f ? ({ ...f, description: e.target.value }) : f)} />
@@ -717,88 +850,446 @@ export default function ProductsPage() {
       </Modal>
 
       {/* Create modal */}
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="สร้างสินค้าใหม่">
+      <Modal isOpen={createOpen} onClose={() => {
+        setCreateOpen(false);
+        setStep2ValidationAttempted(false);
+        setCreateStep(1);
+        setSelectedCategoryId("");
+        setSelectedSubCategoryId("");
+        setSelectedBrandId("");
+        setCreateForm({ product_name_th: "", product_name_en: "", base_price: "", base_sku: "", description: "", sub_category_id: "", brand_id: "" });
+        setSelectedAttributes({});
+        setSelectedMainAttribute("");
+        setVariantPrice("");
+        setVariantIsActive(true);
+        setUploadedImage(null);
+        setImagePreview(null);
+      }} title="สร้างสินค้าใหม่">
         <div className="space-y-4">
-          <div className="text-sm text-gray-600">ขั้นตอน {createStep} / 3</div>
+          <div className="text-sm text-gray-600">ขั้นตอน {createStep} / 4</div>
           {createStep === 1 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <Label>ประเภทหลัก</Label>
-                <Select value={selectedCategoryId} onValueChange={(val: string) => { setSelectedCategoryId(val); setSelectedSubCategoryId(""); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={catalogLoading ? "กำลังโหลด..." : "เลือกประเภท"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (
-                      <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>หมวดย่อย</Label>
-                <Select value={selectedSubCategoryId} onValueChange={(val: string) => { setSelectedSubCategoryId(val); setCreateForm((f) => ({ ...f, sub_category_id: val })); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={selectedCategoryId ? (catalogLoading ? "กำลังโหลด..." : "เลือกหมวดย่อย") : "เลือกประเภทก่อน"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subCategories
-                      .filter((sc) => !selectedCategoryId || String(sc.category_id || '') === selectedCategoryId)
-                      .map((sc) => (
-                        <SelectItem key={sc.sub_category_id} value={sc.sub_category_id}>{sc.sub_category_name}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {catalogError && (
-                <div className="md:col-span-2 text-sm text-red-600">{catalogError}</div>
+            <div className="space-y-6">
+              {!selectedCategoryId ? (
+                // Step 1a: Select Category
+                <div>
+                  <Label className="text-base font-semibold mb-4 block">เลือกประเภทหลัก</Label>
+                  {catalogLoading ? (
+                    <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
+                  ) : catalogError ? (
+                    <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{catalogError}</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-3 overflow-x-auto pb-2">
+                      {categories.map((category) => {
+                        return (
+                          <button
+                            key={category.category_id}
+                            onClick={() => setSelectedCategoryId(String(category.category_id))}
+                            className="relative bg-white border-2 border-gray-200 rounded-lg px-6 py-4 hover:border-pink-500 hover:shadow-md transition-all duration-200 whitespace-nowrap group"
+                          >
+                            <span className="text-sm font-medium text-gray-700">{category.category_name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Step 1b: Select Subcategory
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <button
+                      onClick={() => {
+                        setSelectedCategoryId("");
+                        setSelectedSubCategoryId("");
+                      }}
+                      className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
+                    >
+                      ← กลับไปเลือกประเภท
+                    </button>
+                  </div>
+                  <Label className="text-base font-semibold mb-4 block">
+                    เลือกหมวดย่อย - {categories.find(c => String(c.category_id) === selectedCategoryId)?.category_name}
+                  </Label>
+                  {catalogLoading ? (
+                    <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
+                  ) : catalogError ? (
+                    <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{catalogError}</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-3 overflow-x-auto pb-2">
+                      {subCategories
+                        .filter((sc) => String(sc.category_id || '') === selectedCategoryId)
+                        .map((subCategory) => {
+                          const isSelected = selectedSubCategoryId === subCategory.sub_category_id;
+                          
+                          return (
+                            <button
+                              key={subCategory.sub_category_id}
+                              onClick={() => {
+                                setSelectedSubCategoryId(subCategory.sub_category_id);
+                                setCreateForm((f) => ({ ...f, sub_category_id: subCategory.sub_category_id }));
+                              }}
+                              className={`relative bg-white border-2 rounded-lg px-6 py-4 hover:shadow-md transition-all duration-200 whitespace-nowrap ${
+                                isSelected 
+                                  ? 'border-pink-500 bg-pink-50' 
+                                  : 'border-gray-200 hover:border-pink-300'
+                              }`}
+                            >
+                              <span className={`text-sm font-medium transition-colors duration-200 ${
+                                isSelected ? 'text-pink-700' : 'text-gray-700'
+                              }`}>
+                                {subCategory.sub_category_name}
+                              </span>
+                              {isSelected && (
+                                <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
               )}
-              <div className="md:col-span-2 flex items-center gap-2 pt-2 justify-end">
-                <Button onClick={() => setCreateStep(2)}>ถัดไป</Button>
-              </div>
+              {selectedSubCategoryId && (
+                <div>
+                  <Label className="text-base font-semibold mb-4 block">
+                    เลือกแบรนด์
+                  </Label>
+                  {catalogLoading ? (
+                    <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
+                  ) : catalogError ? (
+                    <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{catalogError}</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-3 overflow-x-auto pb-2">
+                      {/* Non-Brand option - always available */}
+                      <button
+                        onClick={() => {
+                          setSelectedBrandId("non-brand");
+                          setCreateForm((f) => ({ ...f, brand_id: "" }));
+                        }}
+                        className={`relative bg-white border-2 rounded-lg px-6 py-4 hover:shadow-md transition-all duration-200 whitespace-nowrap ${
+                          selectedBrandId === "non-brand"
+                            ? 'border-pink-500 bg-pink-50' 
+                            : 'border-gray-200 hover:border-pink-300'
+                        }`}
+                      >
+                        <span className={`text-sm font-medium transition-colors duration-200 ${
+                          selectedBrandId === "non-brand" ? 'text-pink-700' : 'text-gray-700'
+                        }`}>
+                          Non-Brand (NBR)
+                        </span>
+                        {selectedBrandId === "non-brand" && (
+                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        )}
+                      </button>
+                      {/* Brand options - only show if brands exist */}
+                      {brands.length > 0 && brands.map((brand) => {
+                        const isSelected = selectedBrandId === String(brand.brand_id);
+                        return (
+                          <button
+                            key={brand.brand_id}
+                            onClick={() => {
+                              setSelectedBrandId(String(brand.brand_id));
+                              setCreateForm((f) => ({ ...f, brand_id: String(brand.brand_id) }));
+                            }}
+                            className={`relative bg-white border-2 rounded-lg px-6 py-4 hover:shadow-md transition-all duration-200 whitespace-nowrap ${
+                              isSelected 
+                                ? 'border-pink-500 bg-pink-50' 
+                                : 'border-gray-200 hover:border-pink-300'
+                            }`}
+                          >
+                            <span className={`text-sm font-medium transition-colors duration-200 ${
+                              isSelected ? 'text-pink-700' : 'text-gray-700'
+                            }`}>
+                              {brand.brand_name_th} ({brand.brand_code})
+                            </span>
+                            {isSelected && (
+                              <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {/* Add New Brand Button */}
+                      <button
+                        onClick={() => setIsAddBrandModalOpen(true)}
+                        className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg px-6 py-4 hover:border-pink-400 hover:bg-pink-50 transition-all duration-200 whitespace-nowrap flex items-center gap-2"
+                      >
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span className="text-sm font-medium text-gray-700">
+                          เพิ่มแบรนด์ใหม่
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                  {selectedBrandId && (
+                    <div className="flex items-center gap-2 pt-4 justify-end border-t border-gray-200 mt-4">
+                      <Button 
+                        onClick={() => setCreateStep(2)} 
+                        className="bg-pink-500 hover:bg-pink-600"
+                      >
+                        ถัดไป
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : createStep === 2 ? (
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="product_name_th">ชื่อสินค้า (TH)</Label>
-                  <Input id="product_name_th" value={createForm.product_name_th} onChange={(e) => setCreateForm((f) => ({ ...f, product_name_th: e.target.value }))} />
-                </div>
-                <div>
-                  <Label htmlFor="product_name_en">ชื่อสินค้า (EN)</Label>
-                  <Input id="product_name_en" value={createForm.product_name_en} onChange={(e) => setCreateForm((f) => ({ ...f, product_name_en: e.target.value }))} />
-                  {createForm.product_name_en && createForm.product_name_en.length < 3 && (
-                    <p className="text-sm text-red-500 mt-1">ต้องมีอย่างน้อย 3 ตัวอักษรเพื่อสร้าง Base SKU</p>
+                  <Label htmlFor="product_name_th">ชื่อสินค้า (TH) <span className="text-red-500">*</span></Label>
+                  <Input 
+                    id="product_name_th" 
+                    value={createForm.product_name_th} 
+                    onChange={(e) => setCreateForm((f) => ({ ...f, product_name_th: e.target.value }))}
+                    className={step2ValidationAttempted && !createForm.product_name_th.trim() ? 'border-red-300' : ''}
+                  />
+                  {step2ValidationAttempted && !createForm.product_name_th.trim() && (
+                    <p className="text-sm text-red-500 mt-1">กรุณากรอกชื่อสินค้า (TH)</p>
                   )}
                 </div>
                 <div>
-                  <Label htmlFor="base_price">ราคาเริ่มต้น</Label>
-                  <Input id="base_price" type="number" step="0.01" value={createForm.base_price} onChange={(e) => setCreateForm((f) => ({ ...f, base_price: e.target.value }))} />
-                </div>
-                <div>
-                  <Label htmlFor="base_sku">Base SKU</Label>
+                  <Label htmlFor="product_name_en">ชื่อสินค้า (EN) <span className="text-red-500">*</span></Label>
                   <Input 
-                    id="base_sku" 
-                    value={generateBaseSkuPrefix(selectedSubCategoryId, createForm.product_name_en)} 
-                    readOnly 
-                    className="bg-gray-100 cursor-not-allowed"
-                    placeholder="กรุณาใส่ชื่อสินค้า (EN)"
+                    id="product_name_en" 
+                    value={createForm.product_name_en} 
+                    onChange={(e) => setCreateForm((f) => ({ ...f, product_name_en: e.target.value }))}
+                    className={step2ValidationAttempted && (!createForm.product_name_en.trim() || createForm.product_name_en.length < 3) ? 'border-red-300' : ''}
                   />
+                  {step2ValidationAttempted && !createForm.product_name_en.trim() ? (
+                    <p className="text-sm text-red-500 mt-1">กรุณากรอกชื่อสินค้า (EN)</p>
+                  ) : step2ValidationAttempted && createForm.product_name_en.length < 3 && (
+                    <p className="text-sm text-red-500 mt-1">ต้องมีอย่างน้อย 3 ตัวอักษรเพื่อสร้าง Base SKU</p>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <Label htmlFor="description">รายละเอียด</Label>
-                  <Textarea id="description" value={createForm.description} onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))} />
+                  <Textarea 
+                    id="description" 
+                    value={createForm.description} 
+                    onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))}
+                  />
                 </div>
               </div>
               <div className="flex items-center gap-2 pt-2 justify-end">
-                <Button variant="outline" onClick={() => setCreateStep(1)}>ย้อนกลับ</Button>
-                <Button onClick={() => setCreateStep(3)}>ถัดไป</Button>
+                <Button variant="outline" onClick={() => {
+                  setStep2ValidationAttempted(false);
+                  setCreateStep(1);
+                }}>ย้อนกลับ</Button>
+                <Button 
+                  onClick={() => {
+                    setStep2ValidationAttempted(true);
+                    // Validate before proceeding
+                    if (!createForm.product_name_th.trim() || 
+                        !createForm.product_name_en.trim() || 
+                        createForm.product_name_en.length < 3) {
+                      return; // Don't proceed if validation fails
+                    }
+                    setStep2ValidationAttempted(false);
+                    setCreateStep(3);
+                  }}
+                  className="bg-pink-500 hover:bg-pink-600 text-white"
+                >
+                  ถัดไป
+                </Button>
               </div>
               {error && (
                 <div className="text-sm text-red-600">{error}</div>
               )}
             </div>
+          ) : createStep === 3 ? (
+            // Step 3: Select Attributes/Variants
+            <div className="space-y-4">
+              <div className="text-sm font-bold text-gray-600 mb-4">เพิ่มคุณสมบัติเริ่มต้นของสินค้า</div>
+              
+              {attributesLoading ? (
+                <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
+              ) : attributesError ? (
+                <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{attributesError}</div>
+              ) : attributes.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="mb-2">ไม่มีแอตทริบิวต์ให้เลือก</p>
+                  <p className="text-sm text-gray-400">คุณสามารถข้ามขั้นตอนนี้ได้</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Select Main Attribute */}
+                  <div>
+                    <Label htmlFor="main_attribute">คุณสมบัติหลัก <span className="text-red-500">*</span></Label>
+                    <Select 
+                      value={selectedMainAttribute} 
+                      onValueChange={(value: string) => {
+                        setSelectedMainAttribute(value);
+                        // Clear selected attribute value when changing main attribute
+                        setSelectedAttributes({});
+                      }}
+                    >
+                      <SelectTrigger id="main_attribute">
+                        <SelectValue placeholder="เลือกคุณสมบัติหลัก" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {attributes.map((attribute) => (
+                          <SelectItem key={attribute.attribute_id} value={String(attribute.attribute_id)}>
+                            {attribute.attribute_name_th} ({attribute.attribute_name_en})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Select Sub Attribute (Attribute Value) */}
+                  {selectedMainAttribute && (
+                    <div>
+                      <Label>คุณสมบัติย่อย <span className="text-red-500">*</span></Label>
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {(() => {
+                          const selectedAttr = attributes.find(a => String(a.attribute_id) === selectedMainAttribute);
+                          if (!selectedAttr || !selectedAttr.values || selectedAttr.values.length === 0) {
+                            return <p className="text-sm text-gray-400">ไม่มีค่าที่เลือกได้</p>;
+                          }
+                          return selectedAttr.values.map((value) => {
+                            const isSelected = selectedAttributes[selectedAttr.attribute_id] === value.attribute_value_id;
+                            return (
+                              <button
+                                key={value.attribute_value_id}
+                                onClick={() => {
+                                  setSelectedAttributes((prev) => {
+                                    if (isSelected) {
+                                      const newAttrs = { ...prev };
+                                      delete newAttrs[selectedAttr.attribute_id];
+                                      return newAttrs;
+                                    } else {
+                                      return { ...prev, [selectedAttr.attribute_id]: value.attribute_value_id };
+                                    }
+                                  });
+                                }}
+                                className={`relative px-4 py-2 rounded-lg border-2 transition-all duration-200 ${
+                                  isSelected
+                                    ? 'border-pink-500 bg-pink-50 text-pink-700'
+                                    : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                                }`}
+                              >
+                                <span className="text-sm font-medium">
+                                  {value.attribute_value_th} ({value.attribute_value_en})
+                                  {value.attribute_value_code && (
+                                    <span className="ml-1 text-xs text-gray-500">[{value.attribute_value_code}]</span>
+                                  )}
+                                </span>
+                                {isSelected && (
+                                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Price Input */}
+                  <div>
+                    <Label htmlFor="variant_price">ราคา <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="variant_price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={variantPrice}
+                      onChange={(e) => setVariantPrice(e.target.value)}
+                      placeholder="กรอกราคา"
+                    />
+                  </div>
+
+                  {/* Is Active Checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="variant_is_active"
+                      checked={variantIsActive}
+                      onChange={(e) => setVariantIsActive(e.target.checked)}
+                      className="w-4 h-4 text-pink-600 border-gray-300 rounded focus:ring-pink-500"
+                    />
+                    <Label htmlFor="variant_is_active" className="cursor-pointer">
+                      พร้อมใช้งาน
+                    </Label>
+                  </div>
+                </div>
+              )}
+              
+              {/* SKU Preview */}
+              {selectedBrandId && selectedSubCategoryId && selectedMainAttribute && Object.keys(selectedAttributes).length > 0 && (
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-1">SKU ที่จะบันทึก</p>
+                  <p className="text-sm text-gray-600 font-mono">
+                    {(() => {
+                      // Pad SubcategoryID with zeros to 3 digits
+                      const subCategoryIdPadded = selectedSubCategoryId 
+                        ? String(selectedSubCategoryId).padStart(3, '0')
+                        : "000";
+                      
+                      const brandCode = selectedBrandId === 'non-brand' 
+                        ? "NBR" 
+                        : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
+                      
+                      const selectedAttributeValueIds = Object.values(selectedAttributes).filter(val => val && val !== "");
+                      let attributeCode = "XX";
+                      if (selectedAttributeValueIds.length > 0) {
+                        for (const attrValueId of selectedAttributeValueIds) {
+                          for (const attr of attributes) {
+                            const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
+                            if (attrValue?.attribute_value_code) {
+                              attributeCode = attrValue.attribute_value_code;
+                              break;
+                            }
+                          }
+                          if (attributeCode !== "XX") break;
+                        }
+                      }
+                      return `${subCategoryIdPadded}-${brandCode}-${attributeCode}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    รูปแบบ : [รหัสหมวดหมู่] - [รหัสแบรนด์] - [รหัสคุณสมบัติ]
+                  </p>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-2 pt-4 justify-end border-t border-gray-200">
+                <Button variant="outline" onClick={() => setCreateStep(2)}>ย้อนกลับ</Button>
+                <Button 
+                  onClick={() => {
+                    // Validate before proceeding
+                    if (!selectedMainAttribute || Object.keys(selectedAttributes).length === 0 || !variantPrice || Number(variantPrice) <= 0) {
+                      return; // Don't proceed if validation fails
+                    }
+                    setCreateStep(4);
+                  }}
+                  className="bg-pink-500 hover:bg-pink-600"
+                >
+                  ถัดไป
+                </Button>
+              </div>
+            </div>
           ) : (
+            // Step 4: Upload Image
             <div className="space-y-4">
               <div className="text-sm text-gray-600 mb-4">อัปโหลดรูปภาพสินค้า</div>
               
@@ -847,7 +1338,34 @@ export default function ProductsPage() {
                       </button>
                     </div>
                     <p className="text-sm text-gray-600">
-                      รูปภาพจะถูกบันทึกเป็น: <span className="font-mono font-semibold">{generateBaseSku(selectedSubCategoryId, createForm.product_name_en)}.jpg</span>
+                      รูปภาพจะถูกบันทึกเป็น: <span className="font-mono font-semibold">
+                        {(() => {
+                          // Pad SubcategoryID with zeros to 3 digits
+                          const subCategoryIdPadded = selectedSubCategoryId 
+                            ? String(selectedSubCategoryId).padStart(3, '0')
+                            : "000";
+                          
+                          const brandCode = selectedBrandId === 'non-brand' 
+                            ? "NBR" 
+                            : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
+                          
+                          const selectedAttributeValueIds = Object.values(selectedAttributes).filter(val => val && val !== "");
+                          let attributeCode = "XX";
+                          if (selectedAttributeValueIds.length > 0) {
+                            for (const attrValueId of selectedAttributeValueIds) {
+                              for (const attr of attributes) {
+                                const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
+                                if (attrValue?.attribute_value_code) {
+                                  attributeCode = attrValue.attribute_value_code;
+                                  break;
+                                }
+                              }
+                              if (attributeCode !== "XX") break;
+                            }
+                          }
+                          return `${subCategoryIdPadded}-${brandCode}-${attributeCode}.jpg`;
+                        })()}
+                      </span>
                     </p>
                   </div>
                 )}
@@ -859,7 +1377,7 @@ export default function ProductsPage() {
                 </div>
               )}
               <div className="flex items-center gap-2 pt-2 justify-end">
-                <Button variant="outline" onClick={() => setCreateStep(2)}>ย้อนกลับ</Button>
+                <Button variant="outline" onClick={() => setCreateStep(3)}>ย้อนกลับ</Button>
                 <Button 
                   onClick={async () => { await handleCreate(); if (!error) { setCreateOpen(false); setCreateStep(1); } }} 
                   disabled={busy || !uploadedImage}
@@ -881,14 +1399,21 @@ export default function ProductsPage() {
           <div className="space-y-6">
             {/* Product Image */}
             <div className="flex justify-center">
-              <ResponsiveImage
-                src={findImageBySku(detailProduct.base_sku) || detailProduct.variants?.find(v => v.image_url)?.image_url || ''}
-                alt={detailProduct.product_name}
-                aspectRatio="square"
-                objectFit="contain"
-                hoverEffect={false}
-                containerClassName="max-w-xs"
-              />
+              {(() => {
+                const firstVariant = detailProduct.variants?.[0];
+                const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
+                const variantImage = detailProduct.variants?.find(v => v.image_url)?.image_url;
+                return (
+                  <ResponsiveImage
+                    src={skuImage || variantImage || ''}
+                    alt={detailProduct.product_name}
+                    aspectRatio="square"
+                    objectFit="contain"
+                    hoverEffect={false}
+                    containerClassName="max-w-xs"
+                  />
+                );
+              })()}
             </div>
 
             {/* Product Info */}
@@ -900,10 +1425,19 @@ export default function ProductsPage() {
 
               <p className="text-gray-600 text-sm leading-relaxed">{detailProduct.description}</p>
 
-              <div className="flex flex-col gap-2 py-3 border-t border-b border-gray-200">
-                <span className="text-sm text-gray-700">SKU: <span className="font-medium">{detailProduct.base_sku}</span></span>
-                <span className="text-sm text-gray-600">ราคาเริ่มต้น : <span className="text-lg font-bold text-blue-600">{detailProduct.base_price.toFixed(2)} ฿</span></span>
-              </div>
+              {detailProduct.variants && detailProduct.variants.length > 0 && (
+                <div className="space-y-3 py-3 border-t border-b border-gray-200">
+                  <div className="text-sm font-semibold text-gray-700 mb-2">ข้อมูลสินค้า:</div>
+                  {detailProduct.variants.map((variant, idx) => (
+                    <div key={idx} className="flex flex-col gap-1 text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                      {variant.sku && (
+                        <span>SKU: <span className="font-medium">{variant.sku}</span></span>
+                      )}
+                      <span>ราคา: <span className="font-bold text-blue-600">{variant.price.toFixed(2)} ฿</span></span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
             </div>
           </div>
@@ -931,19 +1465,37 @@ export default function ProductsPage() {
             <div className="bg-gray-50 p-4 rounded-lg">
               <div className="flex items-center space-x-3">
                 <div className="flex-shrink-0">
-                  <ResponsiveImage
-                    src={findImageBySku(deleteProduct.base_sku) || deleteProduct.variants?.find(v => v.image_url)?.image_url || ''}
-                    alt={deleteProduct.product_name}
-                    aspectRatio="square"
-                    objectFit="contain"
-                    hoverEffect={false}
-                    containerClassName="w-12 h-12"
-                  />
+                  {(() => {
+                    const firstVariant = deleteProduct.variants?.[0];
+                    const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
+                    const variantImage = deleteProduct.variants?.find(v => v.image_url)?.image_url;
+                    return (
+                      <ResponsiveImage
+                        src={skuImage || variantImage || ''}
+                        alt={deleteProduct.product_name}
+                        aspectRatio="square"
+                        objectFit="contain"
+                        hoverEffect={false}
+                        containerClassName="w-12 h-12"
+                      />
+                    );
+                  })()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{deleteProduct.product_name}</p>
-                  <p className="text-sm text-gray-500">SKU: {deleteProduct.base_sku}</p>
-                  <p className="text-sm text-gray-500">{deleteProduct.base_price.toFixed(2)} บาท</p>
+                  {deleteProduct.variants && deleteProduct.variants.length > 0 && (
+                    <>
+                      {deleteProduct.variants[0]?.sku && (
+                        <p className="text-sm text-gray-500">SKU: {deleteProduct.variants[0].sku}</p>
+                      )}
+                      <p className="text-sm text-gray-500">
+                        {deleteProduct.variants.length === 1 
+                          ? `${deleteProduct.variants[0].price.toFixed(2)} บาท`
+                          : `${deleteProduct.variants.length} variants`
+                        }
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -970,6 +1522,78 @@ export default function ProductsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Add New Brand Modal */}
+      <Modal
+        isOpen={isAddBrandModalOpen}
+        onClose={() => {
+          setIsAddBrandModalOpen(false);
+          setNewBrandForm({ brand_name_th: "", brand_name_en: "", brand_code: "" });
+          setNewBrandError(null);
+        }}
+        title="เพิ่มแบรนด์ใหม่"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="new_brand_name_th">ชื่อแบรนด์ (ไทย) *</Label>
+            <Input
+              id="new_brand_name_th"
+              value={newBrandForm.brand_name_th}
+              onChange={(e) => setNewBrandForm({ ...newBrandForm, brand_name_th: e.target.value })}
+              placeholder="กรอกชื่อแบรนด์ภาษาไทย"
+            />
+          </div>
+          <div>
+            <Label htmlFor="new_brand_name_en">ชื่อแบรนด์ (อังกฤษ) *</Label>
+            <Input
+              id="new_brand_name_en"
+              value={newBrandForm.brand_name_en}
+              onChange={(e) => setNewBrandForm({ ...newBrandForm, brand_name_en: e.target.value })}
+              placeholder="กรอกชื่อแบรนด์ภาษาอังกฤษ"
+            />
+          </div>
+          <div>
+            <Label htmlFor="new_brand_code">รหัสแบรนด์ *</Label>
+            <Input
+              id="new_brand_code"
+              value={newBrandForm.brand_code}
+              onChange={(e) => {
+                const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+                setNewBrandForm({ ...newBrandForm, brand_code: value });
+              }}
+              placeholder="กรอกรหัสแบรนด์ (3 ตัว)"
+              maxLength={3}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              ต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข 3 ตัวเท่านั้น
+            </p>
+          </div>
+          {newBrandError && (
+            <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+              {newBrandError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddBrandModalOpen(false);
+                setNewBrandForm({ brand_name_th: "", brand_name_en: "", brand_code: "" });
+                setNewBrandError(null);
+              }}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={handleAddNewBrand}
+              disabled={newBrandSubmitting}
+              className="bg-green-500 hover:bg-green-600"
+            >
+              {newBrandSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

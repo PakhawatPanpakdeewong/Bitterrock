@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const attributesRes = await query(
       `SELECT attributeid as attribute_id, attributenameth as attribute_name_th, attributenameen as attribute_name_en
        FROM attributes
-       ORDER BY attributenameth`,
+       ORDER BY attributeid`,
       []
     );
 
@@ -35,9 +35,9 @@ export async function GET(req: NextRequest) {
 
     // Fetch attribute values if requested - using lowercase table and column names without underscores
     const valuesRes = await query(
-      `SELECT av.attributevalueid as attribute_value_id, av.attributeid as attribute_id, av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en
+      `SELECT av.attributevalueid as attribute_value_id, av.attributeid as attribute_id, av.attributevalueth as attribute_value_th, av.attributevalueen as attribute_value_en, av.attributevaluecode as attribute_value_code
        FROM attributevalues av
-       ORDER BY av.attributeid, av.attributevalueth`,
+       ORDER BY av.attributeid, av.attributevalueid`,
       []
     );
 

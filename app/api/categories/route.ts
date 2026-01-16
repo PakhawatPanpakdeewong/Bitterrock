@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
               categorynameth AS category_name_th,
               categorynameen AS category_name_en
        FROM categories
-       ORDER BY categorynameth`
+       ORDER BY categoryid`
     );
 
     const mapped = categoriesResult.rows.map((row: any) => ({

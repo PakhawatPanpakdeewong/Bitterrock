@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cn } from '@/components/utils/cn';
 import { useSidebar } from './sidebar-context';
@@ -61,8 +61,27 @@ const menuGroups: MenuGroup[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+      });
+      if (response.ok) {
+        router.push('/login');
+        router.refresh();
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const toggleExpand = (itemName: string) => {
     const newExpanded = new Set(expandedItems);
@@ -104,16 +123,15 @@ export function Sidebar() {
         )}
         {isCollapsed && (
           <div className="flex items-center justify-center w-full">
-            <img 
-              src="/KiddyCareLogo.png" 
-              alt="KiddyCare Logo" 
-              className="w-8 h-8 object-contain"
-            />
+            {/* Logo hidden when collapsed */}
           </div>
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          className={cn(
+            "p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors",
+            isCollapsed && "mx-auto"
+          )}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <svg
@@ -132,7 +150,7 @@ export function Sidebar() {
       </div>
 
       {/* Menu Items */}
-      <div className="overflow-y-auto h-[calc(100vh-4rem)] py-4">
+      <div className="overflow-y-auto h-[calc(100vh-8rem)] py-4">
         {menuGroups.map((group) => (
           <div key={group.title} className="mb-6">
             {!isCollapsed && (
@@ -232,6 +250,31 @@ export function Sidebar() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Logout Button */}
+      <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-white">
+        <button
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className={cn(
+            'w-full flex items-center px-4 py-3 text-sm font-medium transition-colors',
+            'text-red-600 hover:text-red-700 hover:bg-red-50',
+            isCollapsed && 'justify-center',
+            isLoggingOut && 'opacity-50 cursor-not-allowed'
+          )}
+          title={isCollapsed ? 'ออกจากระบบ' : undefined}
+        >
+          <svg
+            className={cn('w-4 h-4 flex-shrink-0', !isCollapsed && 'mr-3')}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          {!isCollapsed && <span>{isLoggingOut ? 'กำลังออกจากระบบ...' : 'ออกจากระบบ'}</span>}
+        </button>
       </div>
     </aside>
   );

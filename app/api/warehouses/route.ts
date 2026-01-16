@@ -196,6 +196,22 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'warehouse_id is required' }, { status: 400 });
     }
 
+    // Check if warehouse has inventory items
+    const invCountRes = await query(
+      'SELECT COUNT(1) AS cnt FROM inventories WHERE warehouseid = $1',
+      [warehouse_id]
+    );
+    const invCount = Number(invCountRes.rows?.[0]?.cnt || 0);
+    
+    if (invCount > 0) {
+      return NextResponse.json({
+        ok: false,
+        error: 'ไม่สามารถลบคลังสินค้าได้ เนื่องจากมีสินค้าอยู่ในคลังสินค้านี้',
+        details: `มีสินค้า ${invCount} รายการในคลังสินค้านี้ กรุณาลบหรือย้ายสินค้าออกก่อน`,
+        inventory_count: invCount
+      }, { status: 409 });
+    }
+
     await query(`DELETE FROM warehouses WHERE warehouseid = $1`, [warehouse_id]);
     return NextResponse.json({ ok: true });
   } catch (error: any) {

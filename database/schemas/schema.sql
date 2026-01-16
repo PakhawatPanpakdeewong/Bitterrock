@@ -66,15 +66,23 @@ CREATE TABLE IF NOT EXISTS SubCategories (
     SubCategoryNameEN VARCHAR(255) NOT NULL UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS Brands (
+    BrandID SERIAL PRIMARY KEY,
+    SubCategoryID INTEGER REFERENCES SubCategories(SubCategoryID) ON DELETE CASCADE,
+    BrandNameTH VARCHAR(255) NOT NULL UNIQUE,
+    BrandNameEN VARCHAR(255) NOT NULL UNIQUE,
+    BrandCode VARCHAR(255) NOT NULL UNIQUE,
+    UNIQUE(BrandCode)
+);
+
 -- Products table
 CREATE TABLE IF NOT EXISTS Products (
     ProductID SERIAL PRIMARY KEY,
+    BrandID INTEGER REFERENCES Brands(BrandID) ON DELETE SET NULL,
     SubCategoryID INTEGER REFERENCES SubCategories(SubCategoryID) ON DELETE SET NULL,
     ProductNameTH VARCHAR(255) NOT NULL,
     ProductNameEN VARCHAR(255) NOT NULL,
     Description TEXT,
-    BaseSKU VARCHAR(10) UNIQUE,
-    BasePrice DECIMAL(10,2) NOT NULL CHECK (BasePrice >= 0),
     CreatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UpdatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -102,19 +110,40 @@ CREATE TABLE IF NOT EXISTS AttributeValues (
     AttributeValueID SERIAL PRIMARY KEY,
     AttributeID INTEGER REFERENCES Attributes(AttributeID) ON DELETE CASCADE,
     AttributeValueTH VARCHAR(255) NOT NULL,
-    AttributeValueEN VARCHAR(255) NOT NULL
+    AttributeValueEN VARCHAR(255) NOT NULL,
+    AttributeValueCode VARCHAR(255) NOT NULL,
+    UNIQUE(AttributeID, AttributeValueCode)
 );
 
 -- Product variants table
+-- Each variant represents a specific combination of attributes (e.g., นมตราหมีรสจืด 125ml)
+-- SKU is unique and specific to each variant combination
 CREATE TABLE IF NOT EXISTS ProductVariants (
     VariantID SERIAL PRIMARY KEY,
-    ProductID INTEGER REFERENCES Products(ProductID) ON DELETE CASCADE,
-    AttributeValueID INTEGER REFERENCES AttributeValues(AttributeValueID) ON DELETE CASCADE,
-    SKU VARCHAR(15) UNIQUE,
+    ProductID INTEGER NOT NULL REFERENCES Products(ProductID) ON DELETE CASCADE,
+    SKU VARCHAR(50) NOT NULL UNIQUE,
     Price DECIMAL(10,2) NOT NULL CHECK (Price >= 0),
     IsActive BOOLEAN DEFAULT true,
     CreatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UpdatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ProductVariantAttributes table (Junction table for ProductVariants and AttributeValues)
+-- This table stores the specific attribute combination for each variant
+-- Each variant can have MULTIPLE attributes (2, 3, 4, or more attributes per variant)
+-- Examples: 
+--   Variant 1 (SKU: BRD-MLK-PL-125-BOX): รสจืด + 125ml + กล่อง (3 attributes)
+--   Variant 2 (SKU: BRD-MLK-CH-150-PACK): รสช็อกโกแลต + 150ml + ถุง (3 attributes)
+--   Variant 3 (SKU: TEE-RED-M-LONG): สีแดง + ขนาด M + แขนยาว (3 attributes)
+-- Each variant has a unique SKU and can have multiple attributes (one value per attribute type)
+CREATE TABLE IF NOT EXISTS ProductVariantAttributes (
+    ProductVariantAttributesID SERIAL PRIMARY KEY,
+    VariantID INTEGER NOT NULL REFERENCES ProductVariants(VariantID) ON DELETE CASCADE,
+    AttributeValueID INTEGER NOT NULL REFERENCES AttributeValues(AttributeValueID) ON DELETE CASCADE,
+    CreatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UpdatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- Prevent duplicate attribute values for the same variant
+    UNIQUE(VariantID, AttributeValueID)
 );
 
 -- Addresses table
@@ -327,9 +356,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_created_date ON ChatMessages(Create
 CREATE INDEX IF NOT EXISTS idx_articles_url ON Articles(URL);
 CREATE INDEX IF NOT EXISTS idx_articles_first_seen_at ON Articles(FirstSeenAt);
 CREATE INDEX IF NOT EXISTS idx_products_sub_category_id ON Products(SubCategoryID);
-CREATE INDEX IF NOT EXISTS idx_products_sku ON Products(BaseSKU);
-CREATE INDEX IF NOT EXISTS idx_products_variant_id ON ProductVariants(VariantID);
-CREATE INDEX IF NOT EXISTS idx_products_price ON ProductVariants(Price);
+CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON ProductVariants(ProductID);
+CREATE INDEX IF NOT EXISTS idx_product_variants_sku ON ProductVariants(SKU);
+CREATE INDEX IF NOT EXISTS idx_product_variants_price ON ProductVariants(Price);
+CREATE INDEX IF NOT EXISTS idx_attribute_values_attribute_id ON AttributeValues(AttributeID);
+CREATE INDEX IF NOT EXISTS idx_product_variant_attributes_variant_id ON ProductVariantAttributes(VariantID);
+CREATE INDEX IF NOT EXISTS idx_product_variant_attributes_attribute_value_id ON ProductVariantAttributes(AttributeValueID);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON Orders(CustomerID);
 CREATE INDEX IF NOT EXISTS idx_orders_order_date ON Orders(OrderDate);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON OrderItems(OrderID);
@@ -370,3 +402,4 @@ CREATE TRIGGER update_Orders_updated_date BEFORE UPDATE ON Orders FOR EACH ROW E
 CREATE TRIGGER update_Addresses_updated_date BEFORE UPDATE ON Addresses FOR EACH ROW EXECUTE FUNCTION update_updated_date_column();
 CREATE TRIGGER update_Inventories_updated_date BEFORE UPDATE ON Inventories FOR EACH ROW EXECUTE FUNCTION update_updated_date_column();
 CREATE TRIGGER update_ChatContacts_updated_date BEFORE UPDATE ON ChatContacts FOR EACH ROW EXECUTE FUNCTION update_updated_date_column();
+CREATE TRIGGER update_ProductVariantAttributes_updated_date BEFORE UPDATE ON ProductVariantAttributes FOR EACH ROW EXECUTE FUNCTION update_updated_date_column();

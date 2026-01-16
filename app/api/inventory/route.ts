@@ -64,16 +64,20 @@ export async function GET(req: NextRequest) {
         pv.sku as variant_sku,
         pv.price as variant_price,
         pv.isactive as is_active,
-        av.attributevalueth as attribute_value_th,
-        av.attributevalueen as attribute_value_en,
+        STRING_AGG(DISTINCT av.attributevalueth, ', ' ORDER BY av.attributevalueth) as attribute_value_th,
+        STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
         w.warehousename as warehouse_name
       FROM inventories i
       JOIN products p ON p.productid = i.productid
       LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
       LEFT JOIN productvariants pv ON pv.variantid = i.variantid
-      LEFT JOIN attributevalues av ON av.attributevalueid = pv.attributevalueid
+      LEFT JOIN productvariantattributes pva ON pva.variantid = pv.variantid
+      LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
       JOIN warehouses w ON w.warehouseid = i.warehouseid
       ${whereSql}
+      GROUP BY i.inventoryid, i.productid, i.variantid, i.warehouseid, i.stockquantity, i.reservedquantity, 
+               i.availablequantity, i.expireddate, i.createddate, p.productnameth, p.productnameen, 
+               sc.subcategorynameth, pv.sku, pv.price, pv.isactive, w.warehousename
       ORDER BY i.inventoryid DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
