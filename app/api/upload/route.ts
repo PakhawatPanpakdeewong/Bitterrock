@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 function createR2Client() {
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -88,6 +88,45 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       ok: false, 
       error: error?.message || 'Upload to R2 failed' 
+    }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const filename = searchParams.get('filename') || searchParams.get('name');
+
+    if (!filename) {
+      return NextResponse.json({ ok: false, error: 'Filename is required' }, { status: 400 });
+    }
+
+    // Get R2 configuration
+    const bucket = process.env.R2_BUCKET_NAME || process.env.NEXT_PUBLIC_R2_BUCKET_NAME;
+    if (!bucket) {
+      return NextResponse.json({ ok: false, error: "R2_BUCKET_NAME is not set" }, { status: 500 });
+    }
+
+    // Delete from R2
+    const client = createR2Client();
+    const command = new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: filename,
+    });
+
+    await client.send(command);
+
+    return NextResponse.json({ 
+      ok: true, 
+      message: 'File deleted successfully',
+      filename: filename
+    });
+
+  } catch (error: any) {
+    console.error('R2 Delete error:', error);
+    return NextResponse.json({ 
+      ok: false, 
+      error: error?.message || 'Delete from R2 failed' 
     }, { status: 500 });
   }
 }

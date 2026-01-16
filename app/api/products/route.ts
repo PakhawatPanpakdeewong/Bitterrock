@@ -3,11 +3,15 @@ import { query } from '../../../database/connection';
 
 type DbProduct = {
   product_id: number;
+  brand_id: number | null;
   sub_category_id: number | null;
   product_name_th: string;
   product_name_en: string;
   description: string | null;
   sub_category_name: string | null;
+  brand_name_th: string | null;
+  brand_name_en: string | null;
+  brand_code: string | null;
 };
 
 type DbVariant = {
@@ -46,17 +50,22 @@ export async function GET(req: NextRequest) {
     const productsRes = await query(
       `SELECT 
     p.productid as product_id,
+    p.brandid as brand_id,
     p.subcategoryid as sub_category_id,
     p.productnameth as product_name_th,
     p.productnameen as product_name_en,
     p.description,
     sc.subcategorynameth as sub_category_name,
+    b.brandnameth as brand_name_th,
+    b.brandnameen as brand_name_en,
+    b.brandcode as brand_code,
     pv.variantid as variant_id,
     pv.sku as variant_sku,
     pv.price as variant_price,
     pv.isactive as variant_is_active
    FROM products p
    LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
+   LEFT JOIN brands b ON b.brandid = p.brandid
    LEFT JOIN productvariants pv ON pv.productid = p.productid
    ${whereSql}
    ORDER BY p.productid, pv.variantid
@@ -86,7 +95,9 @@ export async function GET(req: NextRequest) {
               STRING_AGG(DISTINCT av.attributevalueth, ', ' ORDER BY av.attributevalueth) as attribute_value_th,
               STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
               STRING_AGG(DISTINCT a.attributenameth, ', ' ORDER BY a.attributenameth) as attribute_name_th,
-              STRING_AGG(DISTINCT a.attributenameen, ', ' ORDER BY a.attributenameen) as attribute_name_en
+              STRING_AGG(DISTINCT a.attributenameen, ', ' ORDER BY a.attributenameen) as attribute_name_en,
+              STRING_AGG(DISTINCT av.attributevalueid::text, ', ' ORDER BY av.attributevalueid::text) as attribute_value_ids,
+              STRING_AGG(DISTINCT a.attributeid::text, ', ' ORDER BY a.attributeid::text) as attribute_ids
        FROM productvariants pv
        LEFT JOIN productvariantattributes pva ON pva.variantid = pv.variantid
        LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
@@ -105,8 +116,12 @@ export async function GET(req: NextRequest) {
 
     const items = uniqueProducts.map((p) => ({
       id: p.product_id,
+      brand_id: p.brand_id,
       sub_category_id: p.sub_category_id,
       sub_categories_name: p.sub_category_name,
+      brand_name_th: p.brand_name_th,
+      brand_name_en: p.brand_name_en,
+      brand_code: p.brand_code,
       product_name: p.product_name_th,
       product_name_th: p.product_name_th,
       product_name_en: p.product_name_en,
@@ -119,6 +134,9 @@ export async function GET(req: NextRequest) {
         sku: v.sku,
         price: Number(v.price),
         image_url: v.image_url,
+        is_active: v.is_active ?? true,
+        attribute_value_ids: v.attribute_value_ids ? v.attribute_value_ids.split(', ').map(id => parseInt(id)).filter(id => !isNaN(id)) : [],
+        attribute_ids: v.attribute_ids ? v.attribute_ids.split(', ').map(id => parseInt(id)).filter(id => !isNaN(id)) : [],
       })),
     }));
 

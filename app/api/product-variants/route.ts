@@ -118,8 +118,9 @@ export async function POST(req: NextRequest) {
 
     const variantId = insertRes.rows[0].variant_id;
 
-    // Insert attributes if provided
-    if (attributeValueIds.length > 0) {
+    // Insert attributes ONLY if variant is active
+    // ProductVariantAttributes should only be created when user enables the variant
+    if (is_active && attributeValueIds.length > 0) {
       for (const attributeValueId of attributeValueIds) {
         await query(
           `INSERT INTO productvariantattributes (variantid, attributevalueid)
@@ -145,6 +146,17 @@ export async function PUT(req: NextRequest) {
     if (!variant_id || Number.isNaN(variant_id)) {
       return NextResponse.json({ ok: false, error: 'variant_id is required' }, { status: 400 });
     }
+
+    // Get current variant state to check if is_active is changing
+    const currentVariantRes = await query(
+      `SELECT isactive FROM productvariants WHERE variantid = $1`,
+      [variant_id]
+    );
+    if (currentVariantRes.rows.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Variant not found' }, { status: 404 });
+    }
+    const currentIsActive = currentVariantRes.rows[0]?.isactive ?? false;
+    const newIsActive = body?.is_active;
 
     const fields: string[] = [];
     const values: any[] = [];
@@ -180,6 +192,34 @@ export async function PUT(req: NextRequest) {
     values.push(variant_id);
     const sql = `UPDATE productvariants SET ${fields.join(', ')} WHERE variantid = $${idx}`;
     await query(sql, values);
+
+    // Handle ProductVariantAttributes based on is_active change
+    // ProductVariantAttributes should only exist when variant is active
+    if (newIsActive !== undefined && newIsActive !== currentIsActive) {
+      if (newIsActive === false) {
+        // Delete ProductVariantAttributes when disabling variant
+        await query(
+          `DELETE FROM productvariantattributes WHERE variantid = $1`,
+          [variant_id]
+        );
+      } else {
+        // When enabling variant, create ProductVariantAttributes if attribute_value_ids provided
+        // Otherwise, if variant was previously disabled and re-enabled, we don't recreate attributes
+        // (because they were deleted when disabled)
+        const attributeValueIds = body?.attribute_value_ids;
+        if (attributeValueIds && Array.isArray(attributeValueIds) && attributeValueIds.length > 0) {
+          for (const attributeValueId of attributeValueIds) {
+            await query(
+              `INSERT INTO productvariantattributes (variantid, attributevalueid)
+               VALUES ($1, $2)
+               ON CONFLICT (variantid, attributevalueid) DO NOTHING`,
+              [variant_id, Number(attributeValueId)]
+            );
+          }
+        }
+      }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     const message = error?.message || 'Unknown error';
