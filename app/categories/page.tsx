@@ -18,7 +18,6 @@ import {
 import { 
   Tag,
   Grid,
-  Package,
   Square,
   Filter,
   RefreshCw,
@@ -96,35 +95,14 @@ type BrandFormData = {
   sub_category_id?: string;
 };
 
-type ProductVariantFormData = {
-  category_id: string;
-  sub_category_id: string;
-  product_id: string;
-  attribute_id: string;
-  attribute_value_id: string;
-  sku: string;
-  price: string;
-  is_active: boolean;
-};
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // View toggle state - support 6 views
-  const [currentView, setCurrentView] = useState<'categories' | 'subcategories' | 'products' | 'attributes' | 'attributeValues' | 'brands'>('categories');
-  
-  // Products state (for product list) and variants state (for diversity view)
-  const [products, setProducts] = useState<any[]>([]);
-  const [productsLoading, setProductsLoading] = useState<boolean>(false);
-  const [productsError, setProductsError] = useState<string | null>(null);
-  const [variants, setVariants] = useState<any[]>([]);
-  const [variantsLoading, setVariantsLoading] = useState<boolean>(false);
-  const [variantsError, setVariantsError] = useState<string | null>(null);
-  const [editingVariant, setEditingVariant] = useState<any>(null);
-  const [isEditVariantModalOpen, setIsEditVariantModalOpen] = useState(false);
-  const [isDeleteVariantModalOpen, setIsDeleteVariantModalOpen] = useState(false);
+  // View toggle state - support 5 views
+  const [currentView, setCurrentView] = useState<'categories' | 'subcategories' | 'attributes' | 'attributeValues' | 'brands'>('categories');
   
   // Subcategories state and filter
   const [subCategories, setSubCategories] = useState<Array<{
@@ -220,41 +198,12 @@ export default function CategoriesPage() {
   const [brandFormErrors, setBrandFormErrors] = useState<Partial<BrandFormData>>({});
   const [isBrandSubmitting, setIsBrandSubmitting] = useState(false);
 
-  // Modal states for product variants
-  const [isAddVariantModalOpen, setIsAddVariantModalOpen] = useState(false);
-  const [variantFormData, setVariantFormData] = useState<ProductVariantFormData>({
-    category_id: '',
-    sub_category_id: '',
-    product_id: '',
-    attribute_id: '',
-    attribute_value_id: '',
-    sku: '',
-    price: '',
-    is_active: true
-  });
-  const [variantFormErrors, setVariantFormErrors] = useState<Partial<ProductVariantFormData>>({});
-  const [isVariantSubmitting, setIsVariantSubmitting] = useState(false);
-  
-  // Filtered data for variant form
-  const filteredSubCategoriesForVariant = variantFormData.category_id
-    ? subCategories.filter(sc => sc.category_id === Number(variantFormData.category_id))
-    : [];
-  
-  const filteredProductsForVariant = variantFormData.sub_category_id
-    ? products.filter(p => p.sub_category_id === Number(variantFormData.sub_category_id))
-    : [];
-  
-  const filteredAttributeValuesForVariant = variantFormData.attribute_id
-    ? attributeValues.filter(av => av.attribute_id === Number(variantFormData.attribute_id))
-    : [];
 
   useEffect(() => {
     fetchCategories();
     fetchAttributes();
     fetchAllSubCategories();
     fetchAllAttributeValues();
-    fetchAllProducts();
-    fetchAllVariants();
     fetchBrands(selectedBrandSubCategoryId);
   }, []);
 
@@ -327,37 +276,6 @@ export default function CategoriesPage() {
     }
   };
 
-  const fetchAllProducts = async () => {
-    try {
-      setProductsLoading(true);
-      const response = await fetch('/api/products?limit=10000');
-      const data = await response.json();
-      if (data.ok) {
-        setProducts(Array.isArray(data.items) ? data.items : []);
-      }
-    } catch (err) {
-      setProductsError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setProductsLoading(false);
-    }
-  };
-
-  const fetchAllVariants = async () => {
-    try {
-      setVariantsLoading(true);
-      const response = await fetch('/api/product-variants?limit=10000');
-      const data = await response.json();
-      if (data.ok) {
-        setVariants(Array.isArray(data.items) ? data.items : []);
-      } else {
-        setVariants([]);
-      }
-    } catch (err) {
-      setVariantsError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setVariantsLoading(false);
-    }
-  };
 
   // Format date in Thai format
   const formatThaiDate = () => {
@@ -375,7 +293,6 @@ export default function CategoriesPage() {
       fetchAttributes(),
       fetchAllSubCategories(),
       fetchAllAttributeValues(),
-      fetchAllProducts(),
       fetchBrands(selectedBrandSubCategoryId)
     ]);
   };
@@ -667,107 +584,6 @@ export default function CategoriesPage() {
   };
 
   // Product Variant Functions
-  const validateVariantForm = (): boolean => {
-    const errors: Partial<ProductVariantFormData> = {};
-    
-    if (!variantFormData.category_id) {
-      errors.category_id = 'ประเภทสินค้าจำเป็นต้องเลือก';
-    }
-    
-    if (!variantFormData.sub_category_id) {
-      errors.sub_category_id = 'หมวดหมู่ย่อยจำเป็นต้องเลือก';
-    }
-    
-    if (!variantFormData.product_id) {
-      errors.product_id = 'สินค้าจำเป็นต้องเลือก';
-    }
-    
-    if (!variantFormData.attribute_id) {
-      errors.attribute_id = 'คุณสมบัติหลักจำเป็นต้องเลือก';
-    }
-    
-    if (!variantFormData.attribute_value_id) {
-      errors.attribute_value_id = 'ค่าคุณสมบัติจำเป็นต้องเลือก';
-    }
-    
-    // SKU validation: exactly 3 uppercase English letters (A-Z)
-    const skuPattern = /^[A-Z]{3}$/;
-    if (!variantFormData.sku.trim()) {
-      errors.sku = 'SKU จำเป็นต้องกรอก';
-    } else if (!skuPattern.test(variantFormData.sku.trim())) {
-      errors.sku = 'SKU ต้องเป็นตัวอักษรภาษาอังกฤษ 3 ตัว (A-Z) เท่านั้น';
-    }
-    
-    if (!variantFormData.price.trim() || isNaN(Number(variantFormData.price)) || Number(variantFormData.price) < 0) {
-      errors.price = 'ราคาจำเป็นต้องกรอกและต้องเป็นตัวเลขที่มากกว่าหรือเท่ากับ 0';
-    }
-    
-    setVariantFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const resetVariantForm = () => {
-    setVariantFormData({
-      category_id: '',
-      sub_category_id: '',
-      product_id: '',
-      attribute_id: '',
-      attribute_value_id: '',
-      sku: '',
-      price: '',
-      is_active: true
-    });
-    setVariantFormErrors({});
-  };
-
-  const handleAddProductVariant = async () => {
-    if (!validateVariantForm()) return;
-
-    setIsVariantSubmitting(true);
-    try {
-      const selectedProduct = products.find((p) => p.id === Number(variantFormData.product_id));
-      const baseSku = (selectedProduct?.base_sku || '').toString().trim().toUpperCase();
-      const skuSuffix = variantFormData.sku.trim().toUpperCase();
-      const composedSku = baseSku
-        ? `${baseSku}${baseSku.endsWith('-') ? '' : '-'}${skuSuffix}`
-        : skuSuffix; // Compose final SKU: BASE + '-' + 3-letter suffix
-
-      const response = await fetch('/api/product-variants', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          product_id: Number(variantFormData.product_id),
-          attribute_value_id: Number(variantFormData.attribute_value_id),
-          sku: composedSku,
-          price: Number(variantFormData.price),
-          is_active: variantFormData.is_active
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.ok) {
-        setIsAddVariantModalOpen(false);
-        resetVariantForm();
-        await fetchAllProducts();
-        await fetchAllVariants();
-        setProductsError(null);
-      } else {
-        setProductsError(result.error || 'Failed to create product variant');
-      }
-    } catch (err) {
-      setProductsError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsVariantSubmitting(false);
-    }
-  };
-
-  const closeVariantModals = () => {
-    setIsAddVariantModalOpen(false);
-    resetVariantForm();
-  };
 
   const validateAttrValueForm = (): boolean => {
     const errors: Partial<AttributeValueFormData> = {};
@@ -1122,15 +938,6 @@ export default function CategoriesPage() {
               <span>เพิ่มคุณสมบัติสินค้า</span>
             </Button>
           )}
-          {currentView === 'products' && (
-            <Button
-              onClick={() => setIsAddVariantModalOpen(true)}
-              className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>เพิ่มความหลากหลาย</span>
-            </Button>
-          )}
           {currentView === 'brands' && (
             <Button
               onClick={() => setIsAddBrandModalOpen(true)}
@@ -1143,8 +950,8 @@ export default function CategoriesPage() {
         </div>
       </div>
 
-      {/* Summary Cards - 6 tabs */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+      {/* Summary Cards - 5 tabs */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         {/* All Product Types */}
         <Card 
           className={`cursor-pointer transition-all hover:shadow-md ${
@@ -1240,29 +1047,11 @@ export default function CategoriesPage() {
           </CardContent>
         </Card>
 
-        {/* All Product Items */}
-        <Card 
-          className={`cursor-pointer transition-all hover:shadow-md ${
-            currentView === 'products' ? 'ring-2 ring-blue-500' : ''
-          }`}
-          onClick={() => setCurrentView('products')}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-600 mb-1">ความหลากหลายของสินค้า</p>
-              </div>
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Package className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {isEditMode && (
         <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded p-3">
-          คลิกแถวรายการเพื่อแก้ไขข้อมูล{currentView === 'subcategories' ? 'หมวดย่อย' : currentView === 'attributeValues' ? 'ค่าคุณสมบัติ' : currentView === 'categories' ? 'ประเภทสินค้า' : currentView === 'attributes' ? 'คุณสมบัติ' : currentView === 'brands' ? 'แบรนด์' : 'สินค้า'}
+          คลิกแถวรายการเพื่อแก้ไขข้อมูล{currentView === 'subcategories' ? 'หมวดย่อย' : currentView === 'attributeValues' ? 'ค่าคุณสมบัติ' : currentView === 'categories' ? 'ประเภทสินค้า' : currentView === 'attributes' ? 'คุณสมบัติ' : 'แบรนด์'}
         </div>
       )}
 
@@ -1311,138 +1100,6 @@ export default function CategoriesPage() {
         </Card>
       )}
 
-      {/* Products (Variants) View */}
-      {currentView === 'products' && (
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-base">ความหลากหลายของสินค้า (Products)</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExport}
-                className="h-9 flex items-center gap-2"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span className="text-sm">ส่งออกข้อมูล</span>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {variantsLoading ? (
-              <div className="text-sm text-gray-600">กำลังโหลดความหลากหลายของสินค้า...</div>
-            ) : variantsError ? (
-              <div className="text-sm text-red-600">{variantsError}</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table className="min-w-[900px]">
-                  <THead>
-                    <TR>
-                      <TH>รหัส</TH>
-                      <TH>ชื่อสินค้า</TH>
-                      <TH>คุณสมบัติ</TH>
-                      <TH>SKU</TH>
-                      <TH>ราคา</TH>
-                      <TH>สถานะ</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {variants.length === 0 ? (
-                      <TR>
-                        <TD colSpan={6} className="text-center text-gray-500 py-8">
-                          ไม่พบข้อมูลความหลากหลายของสินค้า
-                        </TD>
-                      </TR>
-                    ) : (
-                      variants.map((v) => (
-                        <TR key={v.variant_id}
-                          onClick={() => { if (isEditMode) { setEditingVariant(v); setVariantFormData({
-                            category_id: '', sub_category_id: '', product_id: String(v.product_id), attribute_id: '', attribute_value_id: String(v.attribute_value_id || ''), sku: '', price: String(v.price ?? ''), is_active: !!v.is_active
-                          }); setVariantFormErrors({}); setIsEditVariantModalOpen(true);} }}
-                          className={isEditMode ? 'cursor-pointer hover:bg-accent/40' : ''}
-                        >
-                          <TD>{v.variant_id}</TD>
-                          <TD>{v.product_name_th}</TD>
-                          <TD>{v.attribute_label}</TD>
-                          <TD>{v.sku || '-'}</TD>
-                          <TD>{`฿${Number(v.price).toFixed(2)}`}</TD>
-                          <TD>
-                            {v.is_active ? (
-                              <span className="px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-green-100 text-green-800">เปิดการขาย</span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-gray-100 text-gray-800">ไม่พร้อมใช้งาน</span>
-                            )}
-                          </TD>
-                        </TR>
-                      ))
-                    )}
-                  </TBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Edit Variant Modal */}
-      <Modal
-        isOpen={isEditVariantModalOpen}
-        onClose={() => { setIsEditVariantModalOpen(false); setEditingVariant(null); }}
-        title="แก้ไขความหลากหลายของสินค้า"
-      >
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="edit_variant_id">รหัสความหลากหลาย</Label>
-            <Input id="edit_variant_id" value={editingVariant?.variant_id || ''} disabled className="bg-gray-100" />
-          </div>
-          <div>
-            <Label htmlFor="edit_variant_price">ราคา *</Label>
-            <Input id="edit_variant_price" type="number" step="0.01" min="0" value={variantFormData.price} onChange={(e) => setVariantFormData({ ...variantFormData, price: e.target.value })} />
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="edit_variant_is_active" checked={variantFormData.is_active} onChange={(e) => setVariantFormData({ ...variantFormData, is_active: e.target.checked })} className="w-4 h-4" />
-            <Label htmlFor="edit_variant_is_active" className="cursor-pointer">เปิดใช้งาน</Label>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setIsEditVariantModalOpen(false); setEditingVariant(null); }}>ยกเลิก</Button>
-            <Button variant="destructive" onClick={() => { setIsEditVariantModalOpen(false); setIsDeleteVariantModalOpen(true); }}>ลบ</Button>
-            <Button className="bg-blue-500 hover:bg-blue-600" disabled={isVariantSubmitting} onClick={async () => {
-              setIsVariantSubmitting(true);
-              try {
-                const res = await fetch('/api/product-variants', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variant_id: editingVariant.variant_id, price: Number(variantFormData.price), is_active: variantFormData.is_active }) });
-                const json = await res.json();
-                if (json.ok) { await fetchAllVariants(); setVariantsError(null); setIsEditVariantModalOpen(false); setEditingVariant(null); }
-                else { setVariantsError(json.error || 'Failed to update variant'); }
-              } catch (e: any) { setVariantsError(e?.message || 'An error occurred'); } finally { setIsVariantSubmitting(false); }
-            }}>บันทึกการเปลี่ยนแปลง</Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Delete Variant Modal */}
-      <Modal
-        isOpen={isDeleteVariantModalOpen}
-        onClose={() => { setIsDeleteVariantModalOpen(false); setEditingVariant(null); }}
-        title="ยืนยันการลบความหลากหลายของสินค้า"
-      >
-        <div className="space-y-4">
-          <p className="text-gray-700">คุณแน่ใจหรือไม่ที่จะลบความหลากหลายรหัส <strong>{editingVariant?.variant_id}</strong> ของสินค้า <strong>{editingVariant?.product_name_th}</strong>?</p>
-          <p className="text-sm text-red-600">หากมีการอ้างอิงในสต็อก (Inventories) ระบบจะไม่อนุญาตให้ลบ</p>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setIsDeleteVariantModalOpen(false); setEditingVariant(null); }}>ยกเลิก</Button>
-            <Button variant="destructive" disabled={isVariantSubmitting} onClick={async () => {
-              setIsVariantSubmitting(true);
-              try {
-                const res = await fetch(`/api/product-variants?id=${editingVariant.variant_id}`, { method: 'DELETE' });
-                const json = await res.json();
-                if (json.ok) { await fetchAllVariants(); setVariantsError(null); setIsDeleteVariantModalOpen(false); setEditingVariant(null); }
-                else { setVariantsError(json.error || 'Failed to delete variant'); }
-              } catch (e: any) { setVariantsError(e?.message || 'An error occurred'); }
-              finally { setIsVariantSubmitting(false); }
-            }}>ลบ</Button>
-          </div>
-        </div>
-      </Modal>
 
       {/* Attributes View */}
       {currentView === 'attributes' && (
@@ -2385,207 +2042,6 @@ export default function CategoriesPage() {
         </div>
       </Modal>
 
-      {/* Add Product Variant Modal */}
-      <Modal
-        isOpen={isAddVariantModalOpen}
-        onClose={closeVariantModals}
-        title="เพิ่มความหลากหลายของสินค้า"
-      >
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="variant_category_id">ประเภทสินค้า *</Label>
-            <Select 
-              value={variantFormData.category_id} 
-              onValueChange={(value: string) => setVariantFormData({ 
-                ...variantFormData, 
-                category_id: value,
-                sub_category_id: '', // Reset sub_category when category changes
-                product_id: '' // Reset product when category changes
-              })}
-            >
-              <SelectTrigger className={variantFormErrors.category_id ? 'border-red-500' : ''}>
-                <SelectValue placeholder="เลือกประเภทสินค้า" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.category_id} value={String(cat.category_id)}>
-                    {cat.category_name_th || cat.category_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {variantFormErrors.category_id && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.category_id}</p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="variant_sub_category_id">หมวดหมู่ย่อย *</Label>
-            <Select 
-              value={variantFormData.sub_category_id} 
-              onValueChange={(value: string) => setVariantFormData({ 
-                ...variantFormData, 
-                sub_category_id: value,
-                product_id: '' // Reset product when sub_category changes
-              })}
-              disabled={!variantFormData.category_id}
-            >
-              <SelectTrigger className={variantFormErrors.sub_category_id ? 'border-red-500' : ''}>
-                <SelectValue placeholder={variantFormData.category_id ? "เลือกหมวดหมู่ย่อย" : "เลือกประเภทสินค้าก่อน"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredSubCategoriesForVariant.map((sc) => (
-                  <SelectItem key={sc.sub_category_id} value={String(sc.sub_category_id)}>
-                    {sc.sub_category_name_th}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {variantFormErrors.sub_category_id && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.sub_category_id}</p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="variant_product_id">สินค้า *</Label>
-            <Select 
-              value={variantFormData.product_id} 
-              onValueChange={(value: string) => setVariantFormData({ ...variantFormData, product_id: value })}
-              disabled={!variantFormData.sub_category_id}
-            >
-              <SelectTrigger className={(variantFormErrors.product_id ? 'border-red-500 ' : '') + 'h-auto min-h-[44px] py-2 whitespace-normal text-left'}>
-                <SelectValue placeholder={variantFormData.sub_category_id ? "เลือกสินค้า" : "เลือกหมวดหมู่ย่อยก่อน"} />
-              </SelectTrigger>
-              <SelectContent className="w-[520px] max-w-[90vw]">
-                {filteredProductsForVariant.map((prod) => (
-                  <SelectItem key={prod.id} value={String(prod.id)} className="whitespace-normal break-words leading-tight py-2">
-                    {prod.product_name_th} ({prod.product_name_en})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {variantFormErrors.product_id && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.product_id}</p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="variant_attribute_id">คุณสมบัติหลัก *</Label>
-            <Select 
-              value={variantFormData.attribute_id} 
-              onValueChange={(value: string) => setVariantFormData({ 
-                ...variantFormData, 
-                attribute_id: value,
-                attribute_value_id: '' // Reset attribute value when attribute changes
-              })}
-            >
-              <SelectTrigger className={variantFormErrors.attribute_id ? 'border-red-500' : ''}>
-                <SelectValue placeholder="เลือกคุณสมบัติหลัก" />
-              </SelectTrigger>
-              <SelectContent>
-                {attributes.map((attr) => (
-                  <SelectItem key={attr.attribute_id} value={String(attr.attribute_id)}>
-                    {attr.attribute_name_th}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {variantFormErrors.attribute_id && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.attribute_id}</p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="variant_attribute_value_id">ค่าคุณสมบัติ *</Label>
-            <Select 
-              value={variantFormData.attribute_value_id} 
-              onValueChange={(value: string) => setVariantFormData({ ...variantFormData, attribute_value_id: value })}
-              disabled={!variantFormData.attribute_id}
-            >
-              <SelectTrigger className={variantFormErrors.attribute_value_id ? 'border-red-500' : ''}>
-                <SelectValue placeholder={variantFormData.attribute_id ? "เลือกค่าคุณสมบัติ" : "เลือกคุณสมบัติหลักก่อน"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredAttributeValuesForVariant.map((av) => (
-                  <SelectItem key={av.attribute_value_id} value={String(av.attribute_value_id)}>
-                    {av.attribute_value_th}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {variantFormErrors.attribute_value_id && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.attribute_value_id}</p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="variant_sku">SKU *</Label>
-            <Input
-              id="variant_sku"
-              value={variantFormData.sku}
-              onChange={(e) => {
-                // Only allow uppercase letters A-Z, max 3 characters
-                const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
-                setVariantFormData({ ...variantFormData, sku: value });
-              }}
-              placeholder="กรอก SKU (3 ตัวอักษร A-Z)"
-              maxLength={3}
-              className={variantFormErrors.sku ? 'border-red-500' : ''}
-            />
-            {variantFormErrors.sku && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.sku}</p>
-            )}
-            <p className="text-xs text-gray-500 mt-1">
-              ต้องเป็นตัวอักษรภาษาอังกฤษ 3 ตัว (A-Z) เท่านั้น
-            </p>
-            {/* SKU preview composed with base SKU */}
-            {(() => {
-              const selected = products.find(p => p.id === Number(variantFormData.product_id));
-              const base = (selected?.base_sku || '').toString().toUpperCase();
-              const suffix = (variantFormData.sku || '').toString().toUpperCase();
-              const preview = base ? `${base}${base.endsWith('-') ? '' : '-'}${suffix}` : suffix;
-              return (
-                <p className="text-xs text-gray-600 mt-1">SKU ที่จะบันทึก: <span className="font-medium">{preview || '-'}</span></p>
-              );
-            })()}
-          </div>
-          <div>
-            <Label htmlFor="variant_price">ราคา *</Label>
-            <Input
-              id="variant_price"
-              type="number"
-              step="0.01"
-              min="0"
-              value={variantFormData.price}
-              onChange={(e) => setVariantFormData({ ...variantFormData, price: e.target.value })}
-              placeholder="กรอกราคา"
-              className={variantFormErrors.price ? 'border-red-500' : ''}
-            />
-            {variantFormErrors.price && (
-              <p className="text-red-500 text-sm mt-1">{variantFormErrors.price}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="variant_is_active"
-              checked={variantFormData.is_active}
-              onChange={(e) => setVariantFormData({ ...variantFormData, is_active: e.target.checked })}
-              className="w-4 h-4"
-            />
-            <Label htmlFor="variant_is_active" className="cursor-pointer">
-              เปิดใช้งาน
-            </Label>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={closeVariantModals}>
-              ยกเลิก
-            </Button>
-            <Button 
-              onClick={handleAddProductVariant}
-              disabled={isVariantSubmitting}
-              className="bg-blue-500 hover:bg-blue-600"
-            >
-              {isVariantSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
     </div>
   );

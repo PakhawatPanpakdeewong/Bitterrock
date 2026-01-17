@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { ResponsiveImage } from "@/components/ui/responsive-image";
-import { Grid, List, RefreshCw, Search, Plus, Pencil } from "lucide-react";
+import { Grid, List, RefreshCw, Search, Plus, Pencil, Upload } from "lucide-react";
+import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
 type Variant = {
   variant_id: number;
@@ -60,8 +61,8 @@ export default function ProductsPage() {
     sub_category_id: "",
     brand_id: "",
   });
-  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [createOpen, setCreateOpen] = useState<boolean>(false);
   const [createStep, setCreateStep] = useState<1 | 2 | 3 | 4>(1);
   const [step2ValidationAttempted, setStep2ValidationAttempted] = useState<boolean>(false);
@@ -72,19 +73,28 @@ export default function ProductsPage() {
   const [editOpen, setEditOpen] = useState<boolean>(false);
   const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
   const [editUploadedImage, setEditUploadedImage] = useState<File | null>(null);
-  const [editSelectedMainAttribute, setEditSelectedMainAttribute] = useState<string>("");
-  const [editSelectedAttributes, setEditSelectedAttributes] = useState<Record<string, string>>({});
-  const [editVariantPrice, setEditVariantPrice] = useState<string>("");
   const [editVariantIsActive, setEditVariantIsActive] = useState<boolean>(true);
-  const [isAddingVariant, setIsAddingVariant] = useState<boolean>(false);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [detailOpen, setDetailOpen] = useState<boolean>(false);
+  const [selectedDetailImageIndex, setSelectedDetailImageIndex] = useState<number>(0);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
 
   const [serverProducts, setServerProducts] = useState<Product[]>(mockProducts);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'picture' | 'card'>('card');
+  const [viewMode, setViewMode] = useState<'picture' | 'card' | 'variants'>('card');
+  // Variants state for variants table view
+  const [variants, setVariants] = useState<any[]>([]);
+  const [variantsLoading, setVariantsLoading] = useState<boolean>(false);
+  const [variantsError, setVariantsError] = useState<string | null>(null);
+  const [editingVariant, setEditingVariant] = useState<any>(null);
+  const [isEditVariantModalOpen, setIsEditVariantModalOpen] = useState(false);
+  const [isDeleteVariantModalOpen, setIsDeleteVariantModalOpen] = useState(false);
+  const [variantFormData, setVariantFormData] = useState({
+    price: '',
+    is_active: true
+  });
+  const [isVariantSubmitting, setIsVariantSubmitting] = useState(false);
   // Catalog data for create step 1 (declare before effects that use them)
   type UiCategory = { category_id: number; category_name: string };
   type UiSubCategory = { sub_category_id: string; sub_category_name: string; category_id: number | null };
@@ -98,6 +108,7 @@ export default function ProductsPage() {
   const [catalogLoading, setCatalogLoading] = useState<boolean>(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedMainAttribute, setSelectedMainAttribute] = useState<string>("");
+  const [selectedSecondaryAttribute, setSelectedSecondaryAttribute] = useState<string>("");
   const [variantPrice, setVariantPrice] = useState<string>("");
   const [variantIsActive, setVariantIsActive] = useState<boolean>(false);
   const [isAddBrandModalOpen, setIsAddBrandModalOpen] = useState<boolean>(false);
@@ -108,6 +119,15 @@ export default function ProductsPage() {
   });
   const [newBrandSubmitting, setNewBrandSubmitting] = useState<boolean>(false);
   const [newBrandError, setNewBrandError] = useState<string | null>(null);
+  const [isAddAttributeValueModalOpen, setIsAddAttributeValueModalOpen] = useState<boolean>(false);
+  const [newAttributeValueForm, setNewAttributeValueForm] = useState({
+    attribute_id: "",
+    attribute_value_th: "",
+    attribute_value_en: "",
+    attribute_value_code: "",
+  });
+  const [newAttributeValueSubmitting, setNewAttributeValueSubmitting] = useState<boolean>(false);
+  const [newAttributeValueError, setNewAttributeValueError] = useState<string | null>(null);
   // Attributes for step 3
   type UiAttribute = { 
     attribute_id: number; 
@@ -220,6 +240,33 @@ export default function ProductsPage() {
     fetchBrands();
   }, [createOpen, selectedSubCategoryId]);
 
+  // Fetch all variants for variants table view
+  const fetchAllVariants = async () => {
+    try {
+      setVariantsLoading(true);
+      setVariantsError(null);
+      const response = await fetch('/api/product-variants?limit=10000');
+      const data = await response.json();
+      if (data.ok) {
+        setVariants(Array.isArray(data.items) ? data.items : []);
+      } else {
+        setVariants([]);
+        setVariantsError(data.error || 'Failed to fetch variants');
+      }
+    } catch (err) {
+      setVariantsError(err instanceof Error ? err.message : 'An error occurred');
+      setVariants([]);
+    } finally {
+      setVariantsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (viewMode === 'variants') {
+      fetchAllVariants();
+    }
+  }, [viewMode]);
+
   const handleAddNewBrand = async () => {
     if (!newBrandForm.brand_name_th.trim() || !newBrandForm.brand_name_en.trim() || !newBrandForm.brand_code.trim()) {
       setNewBrandError('กรุณากรอกข้อมูลให้ครบถ้วน');
@@ -268,6 +315,60 @@ export default function ProductsPage() {
       setNewBrandError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setNewBrandSubmitting(false);
+    }
+  };
+
+  const handleAddNewAttributeValue = async () => {
+    if (!newAttributeValueForm.attribute_id.trim() || !newAttributeValueForm.attribute_value_th.trim() || !newAttributeValueForm.attribute_value_en.trim() || !newAttributeValueForm.attribute_value_code.trim()) {
+      setNewAttributeValueError('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    // Validate attribute_value_code: alphanumeric only, exactly 3 characters
+    const codePattern = /^[A-Za-z0-9]{3}$/;
+    if (!codePattern.test(newAttributeValueForm.attribute_value_code.trim())) {
+      setNewAttributeValueError('รหัสคุณสมบัติย่อยต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข 3 ตัวเท่านั้น');
+      return;
+    }
+
+    try {
+      setNewAttributeValueSubmitting(true);
+      setNewAttributeValueError(null);
+      const response = await fetch('/api/attribute-values', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attribute_id: newAttributeValueForm.attribute_id.trim(),
+          attribute_value_th: newAttributeValueForm.attribute_value_th.trim(),
+          attribute_value_en: newAttributeValueForm.attribute_value_en.trim(),
+          attribute_value_code: newAttributeValueForm.attribute_value_code.trim().toUpperCase(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Refresh attributes list to get the new attribute value
+        try {
+          const attrRes = await fetch('/api/attributes?include_values=true');
+          const attrJson = await attrRes.json();
+          if (attrJson.ok && Array.isArray(attrJson.items)) {
+            setAttributes(attrJson.items);
+          }
+        } catch (refreshError) {
+          console.warn('Failed to refresh attributes:', refreshError);
+        }
+        // Close modal and reset form
+        setIsAddAttributeValueModalOpen(false);
+        setNewAttributeValueForm({ attribute_id: "", attribute_value_th: "", attribute_value_en: "", attribute_value_code: "" });
+        setNewAttributeValueError(null);
+      } else {
+        setNewAttributeValueError(result.error || 'Failed to create attribute value');
+      }
+    } catch (err) {
+      setNewAttributeValueError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setNewAttributeValueSubmitting(false);
     }
   };
 
@@ -322,9 +423,10 @@ export default function ProductsPage() {
     }
   };
 
-  const handleCreate = async () => {
+  const handleCreate = async (): Promise<boolean> => {
     try {
       setBusy(true);
+      setError(null); // Clear previous error
       
       // Convert sub_category_id to number or null
       const rawSubCategoryId = createForm.sub_category_id || selectedSubCategoryId || '';
@@ -361,6 +463,73 @@ export default function ProductsPage() {
       // if (payload.product_name_en.length < 3) {
       //   throw new Error("ชื่อสินค้า (EN) ต้องมีอย่างน้อย 3 ตัวอักษรเพื่อสร้าง Base SKU");
       // }
+      // Generate SKU before creating product to check for duplicates
+      const selectedAttributeValues = Object.values(selectedAttributes).filter(val => val && val !== "");
+      
+      // Generate SKU using SubcategoryID - BrandCode - AttributeValueCode format
+      // Pad SubcategoryID with zeros to 3 digits (e.g., 9 -> 009, 12 -> 012)
+      const subCategoryIdPadded = subCategoryIdValue 
+        ? String(subCategoryIdValue).padStart(3, '0')
+        : "000";
+      
+      const brandCode = selectedBrandId === 'non-brand' 
+        ? "NBR" 
+        : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
+      
+      // หา attribute code ของคุณสมบัติหลัก (main attribute)
+      const mainAttributeValueId = selectedAttributes[selectedMainAttribute];
+      let mainAttributeCode = "XX";
+      if (mainAttributeValueId) {
+        const mainAttr = attributes.find(a => String(a.attribute_id) === selectedMainAttribute);
+        const mainAttrValue = mainAttr?.values?.find(v => v.attribute_value_id === mainAttributeValueId);
+        if (mainAttrValue?.attribute_value_code) {
+          mainAttributeCode = mainAttrValue.attribute_value_code;
+        }
+      }
+      
+      // หา attribute codes ของคุณสมบัติรอง (secondary attributes)
+      const secondaryAttributeCodes: string[] = [];
+      Object.keys(selectedAttributes).forEach(attrId => {
+        if (attrId !== selectedMainAttribute) {
+          const attr = attributes.find(a => String(a.attribute_id) === attrId);
+          const attrValueId = selectedAttributes[attrId];
+          const attrValue = attr?.values?.find(v => v.attribute_value_id === attrValueId);
+          if (attrValue?.attribute_value_code) {
+            secondaryAttributeCodes.push(attrValue.attribute_value_code);
+          }
+        }
+      });
+      
+      // สร้าง SKU: [รหัสหมวดหมู่] - [รหัสแบรนด์] - [รหัสคุณสมบัติหลัก] - [รหัสคุณสมบัติรอง...]
+      let variantSku = `${subCategoryIdPadded}-${brandCode}-${mainAttributeCode}`;
+      if (secondaryAttributeCodes.length > 0) {
+        variantSku += `-${secondaryAttributeCodes.join('-')}`;
+      }
+      
+      // Check for duplicate SKU before creating product
+      const checkSkuRes = await fetch(`/api/product-variants?limit=10000`);
+      const checkSkuData = await checkSkuRes.json();
+      if (checkSkuData.ok && Array.isArray(checkSkuData.items)) {
+        const existingVariant = checkSkuData.items.find((v: any) => v.sku === variantSku);
+        if (existingVariant) {
+          // Found duplicate SKU - get product details
+          const productRes = await fetch(`/api/products?limit=10000`);
+          const productData = await productRes.json();
+          if (productData.ok && Array.isArray(productData.items)) {
+            const duplicateProduct = productData.items.find((p: Product) => 
+              p.variants?.some((v: Variant) => v.sku === variantSku)
+            );
+            if (duplicateProduct) {
+              const duplicateVariant = duplicateProduct.variants?.find((v: Variant) => v.sku === variantSku);
+              throw new Error(
+                `SKU "${variantSku}" ซ้ำกับสินค้าที่มีอยู่แล้ว: "${duplicateProduct.product_name_th || duplicateProduct.product_name}" `
+              );
+            }
+          }
+          throw new Error(`SKU "${variantSku}" ซ้ำกับสินค้าที่มีอยู่แล้ว (รหัสความหลากหลาย: ${existingVariant.variant_id})`);
+        }
+      }
+      
       console.log('🔍 DEBUG: Sending payload to API:', payload);
       const res = await fetch("/api/products", {
         method: "POST",
@@ -378,75 +547,54 @@ export default function ProductsPage() {
       // Create variant with attributes if product created successfully
       if (data.id) {
         const productId = data.id;
-        const selectedAttributeValues = Object.values(selectedAttributes).filter(val => val && val !== "");
-        
-        // Generate SKU using SubcategoryID - BrandCode - AttributeValueCode format
-        // Pad SubcategoryID with zeros to 3 digits (e.g., 9 -> 009, 12 -> 012)
-        const subCategoryIdPadded = subCategoryIdValue 
-          ? String(subCategoryIdValue).padStart(3, '0')
-          : "000";
-        
-        const brandCode = selectedBrandId === 'non-brand' 
-          ? "NBR" 
-          : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
-        
-        // Get attribute value codes from selected attributes
-        const selectedAttributeValueIds = Object.values(selectedAttributes).filter(val => val && val !== "");
-        const attributeValueCodes: string[] = [];
-        
-        // Find attribute value codes for selected values
-        for (const attrValueId of selectedAttributeValueIds) {
-          for (const attr of attributes) {
-            const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
-            if (attrValue?.attribute_value_code) {
-              attributeValueCodes.push(attrValue.attribute_value_code);
-              break;
-            }
-          }
-        }
-        
-        // Use first attribute value code, or "XX" if none selected
-        const attributeCode = attributeValueCodes.length > 0 ? attributeValueCodes[0] : "XX";
-        
-        const variantSku = `${subCategoryIdPadded}-${brandCode}-${attributeCode}`;
         
         // Create variant with attributes
         // Note: ProductVariantAttributes will only be created if is_active = true
-        const variantPayload = {
-          product_id: productId,
+            const variantPayload = {
+              product_id: productId,
           attribute_value_ids: selectedAttributeValues.length > 0 ? selectedAttributeValues : [],
           sku: variantSku,
           price: Number(variantPrice || 0),
           is_active: variantIsActive // Will be false by default (no image = not active)
-        };
-        
-        const variantRes = await fetch("/api/product-variants", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(variantPayload),
-        });
-        
-        if (!variantRes.ok) {
+            };
+            
+            const variantRes = await fetch("/api/product-variants", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(variantPayload),
+            });
+            
+            if (!variantRes.ok) {
           const variantError = await variantRes.json();
           throw new Error(variantError.error || 'สร้าง variant ไม่สำเร็จ');
         }
         
         const variantData = await variantRes.json();
         
-        // Upload image if provided (use variant SKU)
-        if (uploadedImage && variantData.id) {
-          const formData = new FormData();
-          formData.append('file', uploadedImage);
-          formData.append('newName', `${variantSku}.jpg`);
-          
-          const uploadRes = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData,
-          });
-          
-          const uploadData = await uploadRes.json();
-          if (!uploadData.ok) {
-            console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
+        // Upload images if provided (use variant SKU with suffix -1, -2, -3, -4)
+        if (uploadedImages.length > 0 && variantData.id) {
+          for (let i = 0; i < uploadedImages.length; i++) {
+            const file = uploadedImages[i];
+            const imageNumber = i + 1;
+            const imageSku = `${variantSku}-${imageNumber}`;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('newName', `${imageSku}.jpg`);
+            
+            try {
+              const uploadRes = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+              });
+              
+              const uploadData = await uploadRes.json();
+              if (!uploadData.ok) {
+                console.warn(`⚠️ Warning: Failed to upload image ${imageNumber}:`, uploadData.error);
+              }
+            } catch (uploadError) {
+              console.warn(`⚠️ Warning: Failed to upload image ${imageNumber}:`, uploadError);
+            }
           }
         }
       }
@@ -457,15 +605,18 @@ export default function ProductsPage() {
       setSelectedBrandId("");
       setSelectedAttributes({});
       setSelectedMainAttribute("");
+      setSelectedSecondaryAttribute("");
       setVariantPrice("");
       setVariantIsActive(false);
-      setUploadedImage(null);
-      setImagePreview(null);
+      setUploadedImages([]);
+      setImagePreviews([]);
       setCreateStep(1);
       setStep2ValidationAttempted(false);
       await refetchProducts();
+      return true; // Success
     } catch (e: any) {
       setError(e?.message || "สร้างสินค้าไม่สำเร็จ");
+      return false; // Failed
     } finally {
       setBusy(false);
     }
@@ -483,11 +634,7 @@ export default function ProductsPage() {
     });
     setEditImagePreview(null);
     setEditUploadedImage(null);
-    setEditSelectedMainAttribute("");
-    setEditSelectedAttributes({});
-    setEditVariantPrice("");
     setEditVariantIsActive(isActive);
-    setIsAddingVariant(false);
     setEditOpen(true);
   };
 
@@ -535,16 +682,81 @@ export default function ProductsPage() {
   };
 
   // Handle image upload
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setUploadedImage(file);
-      setVariantIsActive(true); // Set to active when image is uploaded
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const maxFiles = 4;
+    const maxSizePerFile = 5 * 1024 * 1024; // 5 MB
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+
+    // Check total files count
+    const totalFiles = uploadedImages.length + files.length;
+    if (totalFiles > maxFiles) {
+      setError(`สามารถอัปโหลดได้สูงสุด ${maxFiles} รูป`);
+      event.target.value = '';
+      return;
+    }
+
+    const newFiles: File[] = [];
+    const fileArray = Array.from(files);
+
+    // Validate all files first
+    for (const file of fileArray) {
+      // Validate file type
+      if (!allowedTypes.includes(file.type)) {
+        setError(`ไฟล์ ${file.name} ไม่ใช่รูปแบบที่รองรับ (รองรับเฉพาะ JPG, PNG, GIF)`);
+        event.target.value = '';
+        return;
+      }
+
+      // Validate file size
+      if (file.size > maxSizePerFile) {
+        setError(`ไฟล์ ${file.name} มีขนาดเกิน 5 MB`);
+        event.target.value = '';
+        return;
+      }
+
+      newFiles.push(file);
+    }
+
+    if (newFiles.length === 0) {
+      event.target.value = '';
+      return;
+    }
+
+    // Create previews for all files
+    const previewPromises = newFiles.map((file) => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    try {
+      const newPreviews = await Promise.all(previewPromises);
+      setUploadedImages([...uploadedImages, ...newFiles]);
+      setImagePreviews([...imagePreviews, ...newPreviews]);
+      setVariantIsActive(true); // Set to active when images are uploaded
+      setError(null);
+    } catch (err) {
+      setError('เกิดข้อผิดพลาดในการอ่านไฟล์');
+    }
+
+    // Reset input
+    event.target.value = '';
+  };
+
+  const removeImage = (index: number) => {
+    const newImages = uploadedImages.filter((_, i) => i !== index);
+    const newPreviews = imagePreviews.filter((_, i) => i !== index);
+    setUploadedImages(newImages);
+    setImagePreviews(newPreviews);
+    if (newImages.length === 0) {
+      setVariantIsActive(false);
     }
   };
 
@@ -570,6 +782,49 @@ export default function ProductsPage() {
     }
     
     return matchingImage?.url || null;
+  };
+
+  // Function to find all images by BASE SKU (including SKU-1, SKU-2, SKU-3, SKU-4)
+  const findAllImagesBySku = (baseSku: string | null): string[] => {
+    if (!baseSku) return [];
+    
+    // Extract base SKU (the SKU stored in database, e.g., "062-HIQ-K65")
+    // Images are stored as "062-HIQ-K65-1.jpg", "062-HIQ-K65-2.jpg", etc.
+    const baseSkuMatch = baseSku; // Use the SKU as-is from database
+    
+    // Find all images that match the base SKU pattern
+    const matchingImages = images
+      .filter(img => {
+        const imageSku = img.key.split('.')[0]; // Remove file extension
+        // Check if image SKU starts with base SKU followed by "-" and a number
+        // e.g., "062-HIQ-K65-1" matches base SKU "062-HIQ-K65"
+        // or exact match for base SKU itself
+        return imageSku === baseSkuMatch || imageSku.startsWith(baseSkuMatch + '-');
+      })
+      .map(img => ({
+        url: img.url,
+        key: img.key
+      }))
+      .filter(item => item.url !== null);
+    
+    // Sort by SKU suffix to ensure order (base SKU first, then SKU-1, SKU-2, etc.)
+    matchingImages.sort((a, b) => {
+      const aSku = a.key.split('.')[0];
+      const bSku = b.key.split('.')[0];
+      
+      // If exact match with base SKU, put it first
+      if (aSku === baseSkuMatch) return -1;
+      if (bSku === baseSkuMatch) return 1;
+      
+      // Extract suffix number
+      const aSuffix = aSku.replace(baseSkuMatch + '-', '');
+      const bSuffix = bSku.replace(baseSkuMatch + '-', '');
+      const aNum = parseInt(aSuffix) || 999;
+      const bNum = parseInt(bSuffix) || 999;
+      return aNum - bNum;
+    });
+    
+    return matchingImages.map(item => item.url as string);
   };
 
   const handleEditSave = async () => {
@@ -679,6 +934,16 @@ export default function ProductsPage() {
           >
             <List className="w-3.5 h-3.5" />
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setViewMode('variants')}
+            className={`h-8 px-2 text-xs ${viewMode === 'variants' ? 'bg-gray-100' : ''}`}
+            title="ความหลากหลายของสินค้า"
+          >
+            <span className="hidden sm:inline">ความหลากหลาย</span>
+            <span className="sm:hidden">Variants</span>
+          </Button>
           {/* Refresh Button */}
           <Button 
             variant="outline" 
@@ -716,9 +981,17 @@ export default function ProductsPage() {
       </div>
       
 
+      {/* Edit Mode Notice */}
+      {isEditMode && viewMode === 'variants' && (
+        <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded p-3">
+          คลิกแถวรายการเพื่อแก้ไขข้อมูลความหลากหลายของสินค้า
+        </div>
+      )}
+
       {/* Product Display - Conditional based on view mode */}
       {viewMode === 'picture' ? (
         // Picture View - Grid of images only
+        <>
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
           {filteredProducts.map((product) => {
             // Try to find image by variant SKU first, then fallback to variant image
@@ -755,7 +1028,8 @@ export default function ProductsPage() {
             );
           })}
         </div>
-      ) : (
+        </>
+      ) : viewMode === 'card' ? (
         // Card View - Detailed cards
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
           {filteredProducts.map((product) => {
@@ -813,7 +1087,89 @@ export default function ProductsPage() {
             );
           })}
         </div>
-      )}
+      ) : viewMode === 'variants' ? (
+        // Variants Table View
+        <Card>
+          <CardContent className="p-0">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-base font-semibold">ความหลากหลายของสินค้า (Products)</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // TODO: Implement export functionality
+                  console.log('Export variants');
+                }}
+                className="h-9 flex items-center gap-2"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span className="text-sm">ส่งออกข้อมูล</span>
+              </Button>
+            </div>
+            <div className="p-4 space-y-4">
+              {variantsLoading ? (
+                <div className="text-sm text-gray-600">กำลังโหลดความหลากหลายของสินค้า...</div>
+              ) : variantsError ? (
+                <div className="text-sm text-red-600">{variantsError}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[900px]">
+                    <THead>
+                      <TR>
+                        <TH>รหัส</TH>
+                        <TH>ชื่อสินค้า</TH>
+                        <TH>คุณสมบัติ</TH>
+                        <TH>SKU</TH>
+                        <TH>ราคา</TH>
+                        <TH>สถานะ</TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {variants.length === 0 ? (
+                        <TR>
+                          <TD colSpan={6} className="text-center text-gray-500 py-8">
+                            ไม่พบข้อมูลความหลากหลายของสินค้า
+                          </TD>
+                        </TR>
+                      ) : (
+                        variants.map((v) => (
+                          <TR 
+                            key={v.variant_id}
+                            onClick={() => { 
+                              if (isEditMode) { 
+                                setEditingVariant(v); 
+                                setVariantFormData({
+                                  price: String(v.price ?? ''),
+                                  is_active: !!v.is_active
+                                }); 
+                                setIsEditVariantModalOpen(true);
+                              } 
+                            }}
+                            className={isEditMode ? 'cursor-pointer hover:bg-accent/40' : ''}
+                          >
+                            <TD>{v.variant_id}</TD>
+                            <TD>{v.product_name_th || v.product_name}</TD>
+                            <TD>{v.attribute_label || '-'}</TD>
+                            <TD>{v.sku || '-'}</TD>
+                            <TD>{`฿${Number(v.price).toFixed(2)}`}</TD>
+                            <TD>
+                              {v.is_active ? (
+                                <span className="px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-green-100 text-green-800">เปิดการขาย</span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-gray-100 text-gray-800">ไม่พร้อมใช้งาน</span>
+                              )}
+                            </TD>
+                          </TR>
+                        ))
+                      )}
+                    </TBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Edit modal */}
       <Modal isOpen={editOpen} onClose={() => { 
@@ -821,11 +1177,7 @@ export default function ProductsPage() {
         setEditForm(null);
         setEditImagePreview(null);
         setEditUploadedImage(null);
-        setEditSelectedMainAttribute("");
-        setEditSelectedAttributes({});
-        setEditVariantPrice("");
         setEditVariantIsActive(true);
-        setIsAddingVariant(false);
       }} title="แก้ไขสินค้า">
         {editForm && (
           <div className="space-y-4">
@@ -847,14 +1199,13 @@ export default function ProductsPage() {
                 </div>
                 {editForm.variants && editForm.variants.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-300">
-                    <Label className="text-gray-500 mb-2 block">คุณสมบัติที่มีอยู่</Label>
+                    <Label className="text-gray-500 mb-2 block">รหัสสินค้า</Label>
                     <div className="space-y-2">
                       {editForm.variants.map((variant, idx) => (
                         <div key={idx} className="bg-white p-2 rounded border border-gray-200 text-sm">
                           <div className="flex justify-between items-start">
                             <div>
-                              <span className="font-medium">{variant.variant_name || variant.sku || `Variant ${variant.variant_id}`}</span>
-                              {variant.sku && <span className="text-gray-500 ml-2">({variant.sku})</span>}
+                              <span className="font-medium">{variant.sku || `Variant ${variant.variant_id}`}</span>
                             </div>
                             <div className="text-right">
                               <div className="font-semibold text-blue-600">{variant.price.toFixed(2)} ฿</div>
@@ -871,27 +1222,27 @@ export default function ProductsPage() {
             {/* Editable Fields */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-700">แก้ไขข้อมูลสินค้า</h3>
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="edit_name_th">ชื่อสินค้า (TH)</Label>
-                  <Input 
-                    id="edit_name_th" 
-                    value={editForm.product_name_th || ""} 
-                    onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_th: e.target.value }) : f)} 
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit_name_en">ชื่อสินค้า (EN)</Label>
-                  <Input 
-                    id="edit_name_en" 
-                    value={editForm.product_name_en || ""} 
-                    onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_en: e.target.value }) : f)} 
-                  />
-                </div>
-                <div>
+          <div className="space-y-3">
+              <div>
+                <Label htmlFor="edit_name_th">ชื่อสินค้า (TH)</Label>
+                <Input 
+                  id="edit_name_th" 
+                  value={editForm.product_name_th || ""} 
+                  onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_th: e.target.value }) : f)} 
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit_name_en">ชื่อสินค้า (EN)</Label>
+                <Input 
+                  id="edit_name_en" 
+                  value={editForm.product_name_en || ""} 
+                  onChange={(e) => setEditForm((f) => f ? ({ ...f, product_name_en: e.target.value }) : f)} 
+                />
+              </div>
+              <div>
                   <Label htmlFor="edit_desc">รายละเอียด</Label>
                   <Textarea id="edit_desc" value={editForm.description || ""} onChange={(e) => setEditForm((f) => f ? ({ ...f, description: e.target.value }) : f)} />
-                </div>
+              </div>
               </div>
 
               {/* Is Active Buttons */}
@@ -956,8 +1307,8 @@ export default function ProductsPage() {
                         >
                           ×
                         </button>
-                      </div>
-                    </div>
+              </div>
+              </div>
                   ) : (
                     <div className="flex flex-col items-center">
                       {editForm.variants && editForm.variants.length > 0 && (() => {
@@ -969,7 +1320,7 @@ export default function ProductsPage() {
                           <img src={currentImage} alt="Current" className="max-w-xs max-h-48 rounded-lg border border-gray-300" />
                         ) : null;
                       })()}
-                    </div>
+            </div>
                   )}
                   <label className="flex items-center justify-center w-full px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
                     <input
@@ -995,267 +1346,6 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            {/* Add New Variant Section */}
-            <div className="border-t border-gray-200 pt-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-700">เพิ่มคุณสมบัติรอง</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsAddingVariant(!isAddingVariant)}
-                >
-                  {isAddingVariant ? 'ยกเลิก' : 'เพิ่มคุณสมบัติ'}
-                </Button>
-              </div>
-              
-              {isAddingVariant && (
-                <div className="bg-gray-50 p-4 rounded-lg space-y-4 border border-gray-200">
-                  {/* Select Main Attribute */}
-                  <div>
-                    <Label htmlFor="edit_main_attribute">คุณสมบัติหลัก <span className="text-red-500">*</span></Label>
-                    <Select 
-                      value={editSelectedMainAttribute} 
-                      onValueChange={(value: string) => {
-                        setEditSelectedMainAttribute(value);
-                        setEditSelectedAttributes({});
-                      }}
-                    >
-                      <SelectTrigger id="edit_main_attribute">
-                        <SelectValue placeholder="เลือกคุณสมบัติหลัก" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {attributes.map((attribute) => (
-                          <SelectItem key={attribute.attribute_id} value={String(attribute.attribute_id)}>
-                            {attribute.attribute_name_th} ({attribute.attribute_name_en})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Select Sub Attribute */}
-                  {editSelectedMainAttribute && (
-                    <div>
-                      <Label>คุณสมบัติย่อย <span className="text-red-500">*</span></Label>
-                      <div className="flex flex-wrap gap-3 mt-2">
-                        {(() => {
-                          const selectedAttr = attributes.find(a => String(a.attribute_id) === editSelectedMainAttribute);
-                          if (!selectedAttr || !selectedAttr.values || selectedAttr.values.length === 0) {
-                            return <p className="text-sm text-gray-400">ไม่มีค่าที่เลือกได้</p>;
-                          }
-                          
-                          // Get attribute_value_ids from existing variants that use the same attribute (main attribute)
-                          const existingAttributeValueIds = new Set<number>();
-                          if (editForm?.variants) {
-                            editForm.variants.forEach(variant => {
-                              // Check if this variant uses the same attribute (main attribute)
-                              if (variant.attribute_ids && variant.attribute_ids.includes(selectedAttr.attribute_id)) {
-                                // Add all attribute_value_ids from this variant
-                                if (variant.attribute_value_ids) {
-                                  variant.attribute_value_ids.forEach(id => existingAttributeValueIds.add(id));
-                                }
-                              }
-                            });
-                          }
-                          
-                          // Filter out values that are already used in existing variants
-                          const availableValues = selectedAttr.values.filter(value => 
-                            !existingAttributeValueIds.has(Number(value.attribute_value_id))
-                          );
-                          
-                          if (availableValues.length === 0) {
-                            return <p className="text-sm text-gray-400">ไม่มีค่าที่เลือกได้ (ถูกใช้หมดแล้ว)</p>;
-                          }
-                          
-                          return availableValues.map((value) => {
-                            const isSelected = editSelectedAttributes[selectedAttr.attribute_id] === value.attribute_value_id;
-                            return (
-                              <button
-                                key={value.attribute_value_id}
-                                onClick={() => {
-                                  setEditSelectedAttributes((prev) => {
-                                    if (isSelected) {
-                                      const newAttrs = { ...prev };
-                                      delete newAttrs[selectedAttr.attribute_id];
-                                      return newAttrs;
-                                    } else {
-                                      return { ...prev, [selectedAttr.attribute_id]: value.attribute_value_id };
-                                    }
-                                  });
-                                }}
-                                className={`relative px-4 py-2 rounded-lg border-2 transition-all duration-200 ${
-                                  isSelected
-                                    ? 'border-pink-500 bg-pink-50 text-pink-700'
-                                    : 'border-gray-200 hover:border-pink-300 text-gray-700'
-                                }`}
-                              >
-                                <span className="text-sm font-medium">
-                                  {value.attribute_value_th} ({value.attribute_value_en})
-                                  {value.attribute_value_code && (
-                                    <span className="ml-1 text-xs text-gray-500">[{value.attribute_value_code}]</span>
-                                  )}
-                                </span>
-                                {isSelected && (
-                                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
-                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Price Input */}
-                  <div>
-                    <Label htmlFor="edit_variant_price">ราคา <span className="text-red-500">*</span></Label>
-                    <Input
-                      id="edit_variant_price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={editVariantPrice}
-                      onChange={(e) => setEditVariantPrice(e.target.value)}
-                      placeholder="กรอกราคา"
-                    />
-                  </div>
-
-                  {/* Add Variant Button */}
-                  <Button
-                    onClick={async () => {
-                      if (!editSelectedMainAttribute || Object.keys(editSelectedAttributes).length === 0 || !editVariantPrice || Number(editVariantPrice) <= 0) {
-                        setError("กรุณากรอกข้อมูลให้ครบถ้วน");
-                        return;
-                      }
-                      try {
-                        setBusy(true);
-                        // Generate SKU
-                        const subCategory = subCategories.find((sc) => String(sc.sub_category_id) === String(editForm.sub_category_id));
-                        const subCategoryIdPadded = String(subCategory?.sub_category_id || '0').padStart(3, '0');
-                        const brandCode = editForm.brand_code || "NBR";
-                        const selectedAttributeValueIds = Object.values(editSelectedAttributes).filter(val => val && val !== "");
-                        let attributeCode = "XX";
-                        if (selectedAttributeValueIds.length > 0) {
-                          for (const attrValueId of selectedAttributeValueIds) {
-                            for (const attr of attributes) {
-                              const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
-                              if (attrValue?.attribute_value_code) {
-                                attributeCode = attrValue.attribute_value_code;
-                                break;
-                              }
-                            }
-                            if (attributeCode !== "XX") break;
-                          }
-                        }
-                        const variantSku = `${subCategoryIdPadded}-${brandCode}-${attributeCode}`;
-
-                        // Create variant
-                        // Note: ProductVariantAttributes will only be created if is_active = true
-                        // New variants added via "เพิ่มคุณสมบัติรอง" will be inactive by default
-                        const variantPayload = {
-                          product_id: editForm.id,
-                          attribute_value_ids: selectedAttributeValueIds,
-                          sku: variantSku,
-                          price: Number(editVariantPrice),
-                          is_active: false // New variants are inactive by default
-                        };
-
-                        const variantRes = await fetch("/api/product-variants", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(variantPayload),
-                        });
-
-                        if (!variantRes.ok) {
-                          const variantError = await variantRes.json();
-                          throw new Error(variantError.error || 'สร้าง variant ไม่สำเร็จ');
-                        }
-
-                        const variantData = await variantRes.json();
-
-                        // Upload image if provided
-                        if (editUploadedImage && variantData.id) {
-                          // Delete old image if exists (same SKU)
-                          try {
-                            const deleteRes = await fetch(`/api/upload?filename=${encodeURIComponent(`${variantSku}.jpg`)}`, {
-                              method: 'DELETE',
-                            });
-                            const deleteData = await deleteRes.json();
-                            if (deleteData.ok) {
-                              console.log('✅ Old image deleted:', `${variantSku}.jpg`);
-                            } else {
-                              console.log('ℹ️ No old image to delete or already deleted');
-                            }
-                          } catch (deleteError) {
-                            console.warn('⚠️ Warning: Failed to delete old image (continuing anyway):', deleteError);
-                          }
-                          
-                          // Upload new image
-                          const formData = new FormData();
-                          formData.append('file', editUploadedImage);
-                          formData.append('newName', `${variantSku}.jpg`);
-                          
-                          const uploadRes = await fetch('/api/upload', {
-                            method: 'POST',
-                            body: formData,
-                          });
-                          
-                          const uploadData = await uploadRes.json();
-                          if (!uploadData.ok) {
-                            console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
-                          } else {
-                            console.log('✅ New image uploaded:', uploadData.filename);
-                            // Refresh images list after successful upload
-                            try {
-                              const imgRes = await fetch("/api/r2-objects?limit=50", { cache: "no-store" });
-                              const imgData = await imgRes.json();
-                              if (imgData.ok) {
-                                setImages(imgData.items || []);
-                              }
-                            } catch (imgError) {
-                              console.warn('⚠️ Warning: Failed to refresh images:', imgError);
-                            }
-                          }
-                        }
-
-                        // Reset variant form
-                        setEditSelectedMainAttribute("");
-                        setEditSelectedAttributes({});
-                        setEditVariantPrice("");
-                        setEditVariantIsActive(true);
-                        setIsAddingVariant(false);
-                        setEditUploadedImage(null);
-                        setEditImagePreview(null);
-                        
-                        await refetchProducts();
-                        // Refresh edit form with updated product data
-                        const updatedProduct = serverProducts.find(p => p.id === editForm.id);
-                        if (updatedProduct) {
-                          setEditForm({ 
-                            ...updatedProduct, 
-                            product_name_th: updatedProduct.product_name_th || updatedProduct.product_name, 
-                            product_name_en: updatedProduct.product_name_en || updatedProduct.product_name 
-                          });
-                        }
-                      } catch (e: any) {
-                        setError(e?.message || "เพิ่มคุณสมบัติไม่สำเร็จ");
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                    disabled={busy || !editSelectedMainAttribute || Object.keys(editSelectedAttributes).length === 0 || !editVariantPrice || Number(editVariantPrice) <= 0}
-                    className="bg-pink-500 hover:bg-pink-600"
-                  >
-                    เพิ่มคุณสมบัติ
-                  </Button>
-                </div>
-              )}
-            </div>
-
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
               <div className="flex items-center gap-2">
@@ -1279,11 +1369,7 @@ export default function ProductsPage() {
                   setEditForm(null);
                   setEditImagePreview(null);
                   setEditUploadedImage(null);
-                  setEditSelectedMainAttribute("");
-                  setEditSelectedAttributes({});
-                  setEditVariantPrice("");
                   setEditVariantIsActive(true);
-                  setIsAddingVariant(false);
                 }}>ยกเลิก</Button>
                 <Button onClick={async () => {
                   if (!editForm) return;
@@ -1380,11 +1466,7 @@ export default function ProductsPage() {
                     setEditForm(null);
                     setEditImagePreview(null);
                     setEditUploadedImage(null);
-                    setEditSelectedMainAttribute("");
-                    setEditSelectedAttributes({});
-                    setEditVariantPrice("");
                     setEditVariantIsActive(true);
-                    setIsAddingVariant(false);
                     await refetchProducts();
                   } catch (e: any) {
                     setError(e?.message || "แก้ไขสินค้าไม่สำเร็จ");
@@ -1409,10 +1491,11 @@ export default function ProductsPage() {
         setCreateForm({ product_name_th: "", product_name_en: "", base_price: "", base_sku: "", description: "", sub_category_id: "", brand_id: "" });
         setSelectedAttributes({});
         setSelectedMainAttribute("");
+        setSelectedSecondaryAttribute("");
         setVariantPrice("");
         setVariantIsActive(false);
-        setUploadedImage(null);
-        setImagePreview(null);
+        setUploadedImages([]);
+        setImagePreviews([]);
       }} title="สร้างสินค้าใหม่">
         <div className="space-y-4">
           <div className="text-sm text-gray-600">ขั้นตอน {createStep} / 4</div>
@@ -1420,7 +1503,7 @@ export default function ProductsPage() {
             <div className="space-y-6">
               {!selectedCategoryId ? (
                 // Step 1a: Select Category
-                <div>
+              <div>
                   <Label className="text-base font-semibold mb-4 block">เลือกประเภทหลัก</Label>
                   {catalogLoading ? (
                     <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
@@ -1439,12 +1522,12 @@ export default function ProductsPage() {
                           </button>
                         );
                       })}
-                    </div>
+              </div>
                   )}
                 </div>
               ) : (
                 // Step 1b: Select Subcategory
-                <div>
+              <div>
                   <div className="flex items-center gap-2 mb-4">
                     <button
                       onClick={() => {
@@ -1465,7 +1548,7 @@ export default function ProductsPage() {
                     <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{catalogError}</div>
                   ) : (
                     <div className="flex flex-wrap gap-3 overflow-x-auto pb-2">
-                      {subCategories
+                    {subCategories
                         .filter((sc) => String(sc.category_id || '') === selectedCategoryId)
                         .map((subCategory) => {
                           const isSelected = selectedSubCategoryId === subCategory.sub_category_id;
@@ -1493,14 +1576,14 @@ export default function ProductsPage() {
                                   <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                   </svg>
-                                </div>
-                              )}
+              </div>
+              )}
                             </button>
                           );
                         })}
-                    </div>
+              </div>
                   )}
-                </div>
+            </div>
               )}
               {selectedSubCategoryId && (
                 <div>
@@ -1535,7 +1618,7 @@ export default function ProductsPage() {
                             <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                          </div>
+                </div>
                         )}
                       </button>
                       {/* Brand options - only show if brands exist */}
@@ -1564,7 +1647,7 @@ export default function ProductsPage() {
                                 <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
-                              </div>
+                </div>
                             )}
                           </button>
                         );
@@ -1673,8 +1756,8 @@ export default function ProductsPage() {
                 <div className="text-center py-8 text-gray-500">
                   <p className="mb-2">ไม่มีแอตทริบิวต์ให้เลือก</p>
                   <p className="text-sm text-gray-400">คุณสามารถข้ามขั้นตอนนี้ได้</p>
-                </div>
-              ) : (
+            </div>
+          ) : (
                 <div className="space-y-6">
                   {/* Select Main Attribute */}
                   <div>
@@ -1685,25 +1768,40 @@ export default function ProductsPage() {
                         setSelectedMainAttribute(value);
                         // Clear selected attribute value when changing main attribute
                         setSelectedAttributes({});
+                        setSelectedSecondaryAttribute("");
                       }}
                     >
                       <SelectTrigger id="main_attribute">
                         <SelectValue placeholder="เลือกคุณสมบัติหลัก" />
-                      </SelectTrigger>
-                      <SelectContent>
+                  </SelectTrigger>
+                  <SelectContent>
                         {attributes.map((attribute) => (
                           <SelectItem key={attribute.attribute_id} value={String(attribute.attribute_id)}>
                             {attribute.attribute_name_th} ({attribute.attribute_name_en})
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
                   {/* Select Sub Attribute (Attribute Value) */}
                   {selectedMainAttribute && (
-                    <div>
-                      <Label>คุณสมบัติย่อย <span className="text-red-500">*</span></Label>
+              <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <Label>คุณสมบัติย่อย <span className="text-red-500">*</span></Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setNewAttributeValueForm(prev => ({ ...prev, attribute_id: selectedMainAttribute }));
+                            setIsAddAttributeValueModalOpen(true);
+                          }}
+                          className="text-xs h-7 px-2"
+                        >
+                          + เพิ่มคุณสมบัติย่อย
+                        </Button>
+                      </div>
                       <div className="flex flex-wrap gap-3 mt-2">
                         {(() => {
                           const selectedAttr = attributes.find(a => String(a.attribute_id) === selectedMainAttribute);
@@ -1753,10 +1851,114 @@ export default function ProductsPage() {
                     </div>
                   )}
 
+                  {/* Select Secondary Attributes (ไม่ซ้ำกับ attribute type ที่เลือกไปแล้ว) */}
+                  {selectedMainAttribute && Object.keys(selectedAttributes).length > 0 && (
+                    <div>
+                      <Label>คุณสมบัติรอง (ไม่บังคับ)</Label>
+                      <div className="space-y-4 mt-2">
+                        {/* Dropdown to select secondary attribute */}
+                        <div>
+                          <Select 
+                            value={selectedSecondaryAttribute} 
+                            onValueChange={(value: string) => {
+                              setSelectedSecondaryAttribute(value);
+                            }}
+                          >
+                  <SelectTrigger>
+                              <SelectValue placeholder="เลือกคุณสมบัติรอง" />
+                  </SelectTrigger>
+                  <SelectContent>
+                              {attributes
+                                .filter(attr => String(attr.attribute_id) !== selectedMainAttribute) // กรอง attribute type ที่เลือกไปแล้ว
+                                .filter(attr => {
+                                  // แสดง attribute ที่ยังไม่ได้เลือก หรือ attribute ที่เลือกอยู่แล้ว (เพื่อให้ dropdown ยังแสดงค่าเดิม)
+                                  return !selectedAttributes[attr.attribute_id] || String(attr.attribute_id) === selectedSecondaryAttribute;
+                                })
+                                .map((attribute) => (
+                                  <SelectItem key={attribute.attribute_id} value={String(attribute.attribute_id)}>
+                                    {attribute.attribute_name_th} ({attribute.attribute_name_en})
+                                  </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+                        {/* Show attribute values when secondary attribute is selected */}
+                        {selectedSecondaryAttribute && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <Label>คุณสมบัติย่อย</Label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setNewAttributeValueForm(prev => ({ ...prev, attribute_id: selectedSecondaryAttribute }));
+                                  setIsAddAttributeValueModalOpen(true);
+                                }}
+                                className="text-xs h-7 px-2"
+                              >
+                                + เพิ่มคุณสมบัติย่อย
+                              </Button>
+                            </div>
+                            <div className="flex flex-wrap gap-3 mt-2">
+                              {(() => {
+                                const selectedAttr = attributes.find(a => String(a.attribute_id) === selectedSecondaryAttribute);
+                                if (!selectedAttr || !selectedAttr.values || selectedAttr.values.length === 0) {
+                                  return <p className="text-sm text-gray-400">ไม่มีค่าที่เลือกได้</p>;
+                                }
+                                const selectedValueId = selectedAttributes[selectedAttr.attribute_id];
+                                return selectedAttr.values.map((value) => {
+                                  const isSelected = selectedValueId === value.attribute_value_id;
+                                  return (
+                                    <button
+                                      key={value.attribute_value_id}
+                                      onClick={() => {
+                                        setSelectedAttributes((prev) => {
+                                          if (isSelected) {
+                                            const newAttrs = { ...prev };
+                                            delete newAttrs[selectedAttr.attribute_id];
+                                            setSelectedSecondaryAttribute(""); // Clear dropdown when deselected
+                                            return newAttrs;
+                                          } else {
+                                            return { ...prev, [selectedAttr.attribute_id]: value.attribute_value_id };
+                                          }
+                                        });
+                                      }}
+                                      className={`relative px-4 py-2 rounded-lg border-2 transition-all duration-200 ${
+                                        isSelected
+                                          ? 'border-pink-500 bg-pink-50 text-pink-700'
+                                          : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                                      }`}
+                                    >
+                                      <span className="text-sm font-medium">
+                                        {value.attribute_value_th} ({value.attribute_value_en})
+                                        {value.attribute_value_code && (
+                                          <span className="ml-1 text-xs text-gray-500">[{value.attribute_value_code}]</span>
+                                        )}
+                                      </span>
+                                      {isSelected && (
+                                        <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                          </svg>
+              </div>
+                                      )}
+                                    </button>
+                                  );
+                                });
+                              })()}
+            </div>
+                </div>
+                  )}
+                </div>
+                </div>
+                  )}
+
                   {/* Price Input */}
-                  <div>
+                <div>
                     <Label htmlFor="variant_price">ราคา <span className="text-red-500">*</span></Label>
-                    <Input
+                  <Input 
                       id="variant_price"
                       type="number"
                       step="0.01"
@@ -1764,8 +1966,8 @@ export default function ProductsPage() {
                       value={variantPrice}
                       onChange={(e) => setVariantPrice(e.target.value)}
                       placeholder="กรอกราคา"
-                    />
-                  </div>
+                  />
+                </div>
 
                 </div>
               )}
@@ -1785,27 +1987,43 @@ export default function ProductsPage() {
                         ? "NBR" 
                         : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
                       
-                      const selectedAttributeValueIds = Object.values(selectedAttributes).filter(val => val && val !== "");
-                      let attributeCode = "XX";
-                      if (selectedAttributeValueIds.length > 0) {
-                        for (const attrValueId of selectedAttributeValueIds) {
-                          for (const attr of attributes) {
-                            const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
-                            if (attrValue?.attribute_value_code) {
-                              attributeCode = attrValue.attribute_value_code;
-                              break;
-                            }
-                          }
-                          if (attributeCode !== "XX") break;
+                      // หา attribute code ของคุณสมบัติหลัก (main attribute)
+                      const mainAttributeValueId = selectedAttributes[selectedMainAttribute];
+                      let mainAttributeCode = "XX";
+                      if (mainAttributeValueId) {
+                        const mainAttr = attributes.find(a => String(a.attribute_id) === selectedMainAttribute);
+                        const mainAttrValue = mainAttr?.values?.find(v => v.attribute_value_id === mainAttributeValueId);
+                        if (mainAttrValue?.attribute_value_code) {
+                          mainAttributeCode = mainAttrValue.attribute_value_code;
                         }
                       }
-                      return `${subCategoryIdPadded}-${brandCode}-${attributeCode}`;
+                      
+                      // หา attribute codes ของคุณสมบัติรอง (secondary attributes)
+                      const secondaryAttributeCodes: string[] = [];
+                      Object.keys(selectedAttributes).forEach(attrId => {
+                        if (attrId !== selectedMainAttribute) {
+                          const attr = attributes.find(a => String(a.attribute_id) === attrId);
+                          const attrValueId = selectedAttributes[attrId];
+                          const attrValue = attr?.values?.find(v => v.attribute_value_id === attrValueId);
+                          if (attrValue?.attribute_value_code) {
+                            secondaryAttributeCodes.push(attrValue.attribute_value_code);
+                          }
+                        }
+                      });
+                      
+                      // สร้าง SKU: [รหัสหมวดหมู่] - [รหัสแบรนด์] - [รหัสคุณสมบัติหลัก] - [รหัสคุณสมบัติรอง...]
+                      let sku = `${subCategoryIdPadded}-${brandCode}-${mainAttributeCode}`;
+                      if (secondaryAttributeCodes.length > 0) {
+                        sku += `-${secondaryAttributeCodes.join('-')}`;
+                      }
+                      
+                      return sku;
                     })()}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    รูปแบบ : [รหัสหมวดหมู่] - [รหัสแบรนด์] - [รหัสคุณสมบัติ]
+                    รูปแบบ : [รหัสหมวดหมู่] - [รหัสแบรนด์] - [รหัสคุณสมบัติหลัก]{Object.keys(selectedAttributes).some(attrId => attrId !== selectedMainAttribute) ? ' - [รหัสคุณสมบัติรอง...]' : ''}
                   </p>
-                </div>
+              </div>
               )}
               
               <div className="flex items-center gap-2 pt-4 justify-end border-t border-gray-200">
@@ -1827,6 +2045,12 @@ export default function ProductsPage() {
           ) : (
             // Step 4: Upload Image
             <div className="space-y-4">
+              {error && (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <div className="font-semibold mb-1">เกิดข้อผิดพลาด:</div>
+                  <div>{error}</div>
+                </div>
+              )}
               <div className="text-sm text-gray-600 mb-4">อัปโหลดรูปภาพสินค้า</div>
               
               {/* Is Active Dropdown */}
@@ -1835,9 +2059,9 @@ export default function ProductsPage() {
                 <Select
                   value={variantIsActive ? "true" : "false"}
                   onValueChange={(value: string) => setVariantIsActive(value === "true")}
-                  disabled={!uploadedImage}
+                  disabled={uploadedImages.length === 0}
                 >
-                  <SelectTrigger className={!uploadedImage ? 'opacity-50' : ''}>
+                  <SelectTrigger className={uploadedImages.length === 0 ? 'opacity-50' : ''}>
                     <SelectValue placeholder="เลือกสถานะ" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1845,130 +2069,186 @@ export default function ProductsPage() {
                     <SelectItem value="false">ปิดการใช้งาน</SelectItem>
                   </SelectContent>
                 </Select>
-                {!uploadedImage && (
+                {uploadedImages.length === 0 && (
                   <span className="text-xs text-gray-500 mt-1 block">(ต้องอัปโหลดรูปภาพก่อน)</span>
                 )}
               </div>
               
               {/* Image Upload Section */}
               <div className="space-y-4">
-                <div className="flex items-center justify-center w-full">
-                  <label htmlFor="product-image" className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
-                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025M5 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm0 0h2a2 2 0 0 0 2-2V1a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2Z"/>
-                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 13h6l-3-3-3 3Z"/>
-                      </svg>
-                      <p className="mb-2 text-sm text-gray-500">
-                        <span className="font-semibold">คลิกเพื่ออัปโหลด</span> รูปภาพสินค้า
-                      </p>
-                      <p className="text-xs text-gray-500">PNG, JPG หรือ GIF (สูงสุด 10MB)</p>
-                    </div>
-                    <input 
-                      id="product-image" 
-                      type="file" 
-                      className="hidden" 
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                    />
-                  </label>
-                </div>
-
-                {/* Image Preview */}
-                {imagePreview && (
-                  <div className="flex flex-col items-center space-y-2">
-                    <div className="relative">
-                      <img 
-                        src={imagePreview} 
-                        alt="Product preview" 
-                        className="w-32 h-32 object-cover rounded-lg border"
+                {uploadedImages.length < 4 && (
+                  <div className="flex items-center justify-center w-full">
+                    <label htmlFor="product-image" className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                          <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025M5 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm0 0h2a2 2 0 0 0 2-2V1a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2Z"/>
+                          <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 13h6l-3-3-3 3Z"/>
+                        </svg>
+                        <p className="mb-2 text-sm text-gray-500">
+                          <span className="font-semibold">คลิกเพื่ออัปโหลด</span> รูปภาพสินค้า
+                        </p>
+                        <p className="text-xs text-gray-500">PNG, JPG หรือ GIF (รูปละไม่เกิน 5MB, สูงสุด 4 รูป)</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          ({uploadedImages.length}/4 รูป)
+                        </p>
+                      </div>
+                      <input 
+                        id="product-image" 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        multiple
+                        onChange={handleImageUpload}
                       />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUploadedImage(null);
-                          setImagePreview(null);
-                          setVariantIsActive(false); // Set to inactive when image is removed
-                        }}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      รูปภาพจะถูกบันทึกเป็น: <span className="font-mono font-semibold">
-                        {(() => {
-                          // Pad SubcategoryID with zeros to 3 digits
-                          const subCategoryIdPadded = selectedSubCategoryId 
-                            ? String(selectedSubCategoryId).padStart(3, '0')
-                            : "000";
-                          
-                          const brandCode = selectedBrandId === 'non-brand' 
-                            ? "NBR" 
-                            : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
-                          
-                          const selectedAttributeValueIds = Object.values(selectedAttributes).filter(val => val && val !== "");
-                          let attributeCode = "XX";
-                          if (selectedAttributeValueIds.length > 0) {
-                            for (const attrValueId of selectedAttributeValueIds) {
-                              for (const attr of attributes) {
-                                const attrValue = attr.values?.find(v => v.attribute_value_id === attrValueId);
-                                if (attrValue?.attribute_value_code) {
-                                  attributeCode = attrValue.attribute_value_code;
-                                  break;
-                                }
-                              }
-                              if (attributeCode !== "XX") break;
+                    </label>
+                  </div>
+                )}
+
+                {/* Image Previews */}
+                {imagePreviews.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {imagePreviews.map((preview, index) => {
+                        // Generate SKU for this image
+                        const subCategoryIdPadded = selectedSubCategoryId 
+                          ? String(selectedSubCategoryId).padStart(3, '0')
+                          : "000";
+                        
+                        const brandCode = selectedBrandId === 'non-brand' 
+                          ? "NBR" 
+                          : (brands.find((b) => String(b.brand_id) === String(selectedBrandId))?.brand_code || "XXX");
+                        
+                        const mainAttributeValueId = selectedAttributes[selectedMainAttribute];
+                        let mainAttributeCode = "XX";
+                        if (mainAttributeValueId) {
+                          const mainAttr = attributes.find(a => String(a.attribute_id) === selectedMainAttribute);
+                          const mainAttrValue = mainAttr?.values?.find(v => v.attribute_value_id === mainAttributeValueId);
+                          if (mainAttrValue?.attribute_value_code) {
+                            mainAttributeCode = mainAttrValue.attribute_value_code;
+                          }
+                        }
+                        
+                        const secondaryAttributeCodes: string[] = [];
+                        Object.keys(selectedAttributes).forEach(attrId => {
+                          if (attrId !== selectedMainAttribute) {
+                            const attr = attributes.find(a => String(a.attribute_id) === attrId);
+                            const attrValueId = selectedAttributes[attrId];
+                            const attrValue = attr?.values?.find(v => v.attribute_value_id === attrValueId);
+                            if (attrValue?.attribute_value_code) {
+                              secondaryAttributeCodes.push(attrValue.attribute_value_code);
                             }
                           }
-                          return `${subCategoryIdPadded}-${brandCode}-${attributeCode}.jpg`;
-                        })()}
-                      </span>
-                    </p>
+                        });
+                        
+                        let baseSku = `${subCategoryIdPadded}-${brandCode}-${mainAttributeCode}`;
+                        if (secondaryAttributeCodes.length > 0) {
+                          baseSku += `-${secondaryAttributeCodes.join('-')}`;
+                        }
+                        const imageSku = `${baseSku}-${index + 1}`;
+                        
+                        return (
+                          <div key={index} className="flex flex-col items-center space-y-2">
+                            <div className="relative">
+                              <img 
+                                src={preview} 
+                                alt={`Product preview ${index + 1}`} 
+                                className="w-full h-32 object-cover rounded-lg border"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeImage(index)}
+                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-600 text-center">
+                              <span className="font-mono font-semibold">{imageSku}.jpg</span>
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
 
               <div className="flex items-center gap-2 pt-2 justify-end">
-                <Button variant="outline" onClick={() => setCreateStep(3)}>ย้อนกลับ</Button>
+                <Button variant="outline" onClick={() => {
+                  setError(null); // Clear error when going back
+                  setCreateStep(3);
+                }}>ย้อนกลับ</Button>
                 <Button 
-                  onClick={async () => { await handleCreate(); if (!error) { setCreateOpen(false); setCreateStep(1); } }} 
+                  onClick={async () => { 
+                    const success = await handleCreate(); 
+                    if (success) { 
+                      setCreateOpen(false); 
+                      setCreateStep(1);
+                      setError(null);
+                    } 
+                  }} 
                   disabled={busy}
                   className="bg-pink-500 hover:bg-pink-600"
                 >
                   {busy ? "กำลังสร้าง..." : "เสร็จสิ้น"}
                 </Button>
               </div>
-              {error && (
-                <div className="text-sm text-red-600">{error}</div>
-              )}
             </div>
           )}
         </div>
       </Modal>
 
       {/* Product Detail Modal */}
-      <Modal isOpen={detailOpen} onClose={() => { setDetailOpen(false); setDetailProduct(null); }} title="รายละเอียดสินค้า">
-        {detailProduct && (
-          <div className="space-y-6">
-            {/* Product Image */}
-            <div className="flex justify-center">
-              {(() => {
-                const firstVariant = detailProduct.variants?.[0];
-                const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
-                const variantImage = detailProduct.variants?.find(v => v.image_url)?.image_url;
-                return (
+      <Modal isOpen={detailOpen} onClose={() => { 
+        setDetailOpen(false); 
+        setDetailProduct(null);
+        setSelectedDetailImageIndex(0);
+      }} title="รายละเอียดสินค้า">
+        {detailProduct && (() => {
+          const firstVariant = detailProduct.variants?.[0];
+          const allImages = firstVariant?.sku ? findAllImagesBySku(firstVariant.sku) : [];
+          const variantImage = detailProduct.variants?.find(v => v.image_url)?.image_url;
+          const productImages = allImages.length > 0 ? allImages : (variantImage ? [variantImage] : []);
+          const currentImage = productImages[selectedDetailImageIndex] || productImages[0] || '';
+          
+          return (
+            <div className="space-y-6">
+              {/* Product Image */}
+              <div className="space-y-4">
+                <div className="flex justify-center">
                   <ResponsiveImage
-                    src={skuImage || variantImage || ''}
+                    src={currentImage}
                     alt={detailProduct.product_name}
                     aspectRatio="square"
                     objectFit="contain"
                     hoverEffect={false}
                     containerClassName="max-w-xs"
                   />
-                );
-              })()}
-            </div>
+                </div>
+                
+                {/* Image Thumbnails (if more than 1 image) */}
+                {productImages.length > 1 && (
+                  <div className="flex justify-center gap-2 flex-wrap">
+                    {productImages.map((img, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setSelectedDetailImageIndex(index)}
+                        className={`relative w-16 h-16 rounded-lg border-2 overflow-hidden transition-all ${
+                          selectedDetailImageIndex === index
+                            ? 'border-pink-500 ring-2 ring-pink-200'
+                            : 'border-gray-200 hover:border-pink-300'
+                        }`}
+                      >
+                      <img
+                        src={img}
+                        alt={`${detailProduct.product_name} - รูป ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
             {/* Product Info */}
             <div className="space-y-4">
@@ -1995,14 +2275,13 @@ export default function ProductsPage() {
                   </div>
                   {detailProduct.variants && detailProduct.variants.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-300">
-                      <Label className="text-gray-500 mb-2 block">คุณสมบัติที่มีอยู่</Label>
+                      <Label className="text-gray-500 mb-2 block">รหัสสินค้า</Label>
                       <div className="space-y-2">
                         {detailProduct.variants.map((variant, idx) => (
                           <div key={idx} className="bg-white p-2 rounded border border-gray-200 text-sm">
                             <div className="flex justify-between items-start">
                               <div>
-                                <span className="font-medium">{variant.variant_name || variant.sku || `Variant ${variant.variant_id}`}</span>
-                                {variant.sku && <span className="text-gray-500 ml-2">({variant.sku})</span>}
+                                <span className="font-medium">{variant.sku || `Variant ${variant.variant_id}`}</span>
                               </div>
                               <div className="text-right">
                                 <div className="font-semibold text-blue-600">{variant.price.toFixed(2)} ฿</div>
@@ -2025,7 +2304,8 @@ export default function ProductsPage() {
 
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
 
       {/* Delete Confirmation Modal */}
@@ -2054,14 +2334,14 @@ export default function ProductsPage() {
                     const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
                     const variantImage = deleteProduct.variants?.find(v => v.image_url)?.image_url;
                     return (
-                      <ResponsiveImage
+                  <ResponsiveImage
                         src={skuImage || variantImage || ''}
-                        alt={deleteProduct.product_name}
-                        aspectRatio="square"
-                        objectFit="contain"
-                        hoverEffect={false}
-                        containerClassName="w-12 h-12"
-                      />
+                    alt={deleteProduct.product_name}
+                    aspectRatio="square"
+                    objectFit="contain"
+                    hoverEffect={false}
+                    containerClassName="w-12 h-12"
+                  />
                     );
                   })()}
                 </div>
@@ -2175,6 +2455,252 @@ export default function ProductsPage() {
               className="bg-green-500 hover:bg-green-600"
             >
               {newBrandSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Variant Modal */}
+      <Modal
+        isOpen={isEditVariantModalOpen}
+        onClose={() => { 
+          setIsEditVariantModalOpen(false); 
+          setEditingVariant(null);
+          setVariantFormData({ price: '', is_active: true });
+        }}
+        title="แก้ไขความหลากหลายของสินค้า"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="edit_variant_id">รหัสความหลากหลาย</Label>
+            <Input 
+              id="edit_variant_id" 
+              value={editingVariant?.variant_id || ''} 
+              disabled 
+              className="bg-gray-100" 
+            />
+          </div>
+          <div>
+            <Label htmlFor="edit_variant_price">ราคา *</Label>
+            <Input 
+              id="edit_variant_price" 
+              type="number" 
+              step="0.01" 
+              min="0" 
+              value={variantFormData.price} 
+              onChange={(e) => setVariantFormData({ ...variantFormData, price: e.target.value })} 
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input 
+              type="checkbox" 
+              id="edit_variant_is_active" 
+              checked={variantFormData.is_active} 
+              onChange={(e) => setVariantFormData({ ...variantFormData, is_active: e.target.checked })} 
+              className="w-4 h-4" 
+            />
+            <Label htmlFor="edit_variant_is_active" className="cursor-pointer">เปิดใช้งาน</Label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => { 
+                setIsEditVariantModalOpen(false); 
+                setEditingVariant(null);
+                setVariantFormData({ price: '', is_active: true });
+              }}
+            >
+              ยกเลิก
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => { 
+                setIsEditVariantModalOpen(false); 
+                setIsDeleteVariantModalOpen(true); 
+              }}
+            >
+              ลบ
+            </Button>
+            <Button 
+              className="bg-blue-500 hover:bg-blue-600" 
+              disabled={isVariantSubmitting} 
+              onClick={async () => {
+                if (!editingVariant) return;
+                setIsVariantSubmitting(true);
+                try {
+                  const res = await fetch('/api/product-variants', { 
+                    method: 'PUT', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ 
+                      variant_id: editingVariant.variant_id, 
+                      price: Number(variantFormData.price), 
+                      is_active: variantFormData.is_active 
+                    }) 
+                  });
+                  const json = await res.json();
+                  if (json.ok) { 
+                    await fetchAllVariants(); 
+                    setVariantsError(null); 
+                    setIsEditVariantModalOpen(false); 
+                    setEditingVariant(null);
+                    setVariantFormData({ price: '', is_active: true });
+                  } else { 
+                    setVariantsError(json.error || 'Failed to update variant'); 
+                  }
+                } catch (e: any) { 
+                  setVariantsError(e?.message || 'An error occurred'); 
+                } finally { 
+                  setIsVariantSubmitting(false); 
+                }
+              }}
+            >
+              บันทึกการเปลี่ยนแปลง
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Variant Modal */}
+      <Modal
+        isOpen={isDeleteVariantModalOpen}
+        onClose={() => { 
+          setIsDeleteVariantModalOpen(false); 
+          setEditingVariant(null);
+        }}
+        title="ยืนยันการลบความหลากหลายของสินค้า"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            คุณแน่ใจหรือไม่ที่จะลบความหลากหลายรหัส <strong>{editingVariant?.variant_id}</strong> ของสินค้า <strong>{editingVariant?.product_name_th || editingVariant?.product_name}</strong>?
+          </p>
+          <p className="text-sm text-red-600">
+            หากมีการอ้างอิงในสต็อก (Inventories) ระบบจะไม่อนุญาตให้ลบ
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => { 
+                setIsDeleteVariantModalOpen(false); 
+                setEditingVariant(null);
+              }}
+            >
+              ยกเลิก
+            </Button>
+            <Button 
+              variant="destructive" 
+              disabled={isVariantSubmitting} 
+              onClick={async () => {
+                if (!editingVariant) return;
+                setIsVariantSubmitting(true);
+                try {
+                  const res = await fetch(`/api/product-variants?id=${editingVariant.variant_id}`, { method: 'DELETE' });
+                  const json = await res.json();
+                  if (json.ok) { 
+                    await fetchAllVariants(); 
+                    setVariantsError(null); 
+                    setIsDeleteVariantModalOpen(false); 
+                    setEditingVariant(null);
+                  } else { 
+                    setVariantsError(json.error || 'Failed to delete variant'); 
+                  }
+                } catch (e: any) { 
+                  setVariantsError(e?.message || 'An error occurred'); 
+                } finally { 
+                  setIsVariantSubmitting(false); 
+                }
+              }}
+            >
+              ลบ
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add New Attribute Value Modal */}
+      <Modal
+        isOpen={isAddAttributeValueModalOpen}
+        onClose={() => {
+          setIsAddAttributeValueModalOpen(false);
+          setNewAttributeValueForm({ attribute_id: "", attribute_value_th: "", attribute_value_en: "", attribute_value_code: "" });
+          setNewAttributeValueError(null);
+        }}
+        title="เพิ่มคุณสมบัติย่อยใหม่"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="new_attribute_value_attribute">คุณสมบัติหลัก *</Label>
+            <Select
+              value={newAttributeValueForm.attribute_id}
+              onValueChange={(value: string) => setNewAttributeValueForm({ ...newAttributeValueForm, attribute_id: value })}
+            >
+              <SelectTrigger id="new_attribute_value_attribute">
+                <SelectValue placeholder="เลือกคุณสมบัติหลัก" />
+              </SelectTrigger>
+              <SelectContent>
+                {attributes.map((attribute) => (
+                  <SelectItem key={attribute.attribute_id} value={String(attribute.attribute_id)}>
+                    {attribute.attribute_name_th} ({attribute.attribute_name_en})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="new_attribute_value_th">ชื่อคุณสมบัติย่อย (ไทย) *</Label>
+            <Input
+              id="new_attribute_value_th"
+              value={newAttributeValueForm.attribute_value_th}
+              onChange={(e) => setNewAttributeValueForm({ ...newAttributeValueForm, attribute_value_th: e.target.value })}
+              placeholder="กรอกชื่อคุณสมบัติย่อยภาษาไทย"
+            />
+          </div>
+          <div>
+            <Label htmlFor="new_attribute_value_en">ชื่อคุณสมบัติย่อย (อังกฤษ) *</Label>
+            <Input
+              id="new_attribute_value_en"
+              value={newAttributeValueForm.attribute_value_en}
+              onChange={(e) => setNewAttributeValueForm({ ...newAttributeValueForm, attribute_value_en: e.target.value })}
+              placeholder="กรอกชื่อคุณสมบัติย่อยภาษาอังกฤษ"
+            />
+          </div>
+          <div>
+            <Label htmlFor="new_attribute_value_code">รหัสคุณสมบัติย่อย *</Label>
+            <Input
+              id="new_attribute_value_code"
+              value={newAttributeValueForm.attribute_value_code}
+              onChange={(e) => {
+                const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+                setNewAttributeValueForm({ ...newAttributeValueForm, attribute_value_code: value });
+              }}
+              placeholder="กรอกรหัสคุณสมบัติย่อย (3 ตัว)"
+              maxLength={3}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              ต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข 3 ตัวเท่านั้น
+            </p>
+          </div>
+          {newAttributeValueError && (
+            <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+              {newAttributeValueError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddAttributeValueModalOpen(false);
+                setNewAttributeValueForm({ attribute_id: "", attribute_value_th: "", attribute_value_en: "", attribute_value_code: "" });
+                setNewAttributeValueError(null);
+              }}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={handleAddNewAttributeValue}
+              disabled={newAttributeValueSubmitting}
+              className="bg-green-500 hover:bg-green-600"
+            >
+              {newAttributeValueSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
             </Button>
           </div>
         </div>

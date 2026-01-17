@@ -35,10 +35,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Invalid file type. Only JPG, PNG, and GIF are allowed.' }, { status: 400 });
     }
 
-    // Validate file size (10MB max)
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    // Validate file size (5MB max)
+    const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
-      return NextResponse.json({ ok: false, error: 'File too large. Maximum size is 10MB.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'File too large. Maximum size is 5MB.' }, { status: 400 });
     }
 
     // Get R2 configuration

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
+import { S3Client, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 type DbProduct = {
   product_id: number;
@@ -329,6 +330,108 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'product_id is required' }, { status: 400 });
     }
 
+    // Helper function to delete image from R2
+    const deleteImageFromR2 = async (filename: string): Promise<boolean> => {
+      try {
+        const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+        const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+        const endpoint = process.env.R2_ENDPOINT;
+        const bucket = process.env.R2_BUCKET_NAME || process.env.NEXT_PUBLIC_R2_BUCKET_NAME;
+
+        if (!accessKeyId || !secretAccessKey || !endpoint || !bucket) {
+          console.warn('⚠️ R2 configuration missing, skipping image deletion');
+          return false;
+        }
+
+        const client = new S3Client({
+          region: "auto",
+          endpoint,
+          credentials: { accessKeyId, secretAccessKey },
+        });
+
+        const command = new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: filename,
+        });
+
+        await client.send(command);
+        return true;
+      } catch (error: any) {
+        console.warn(`⚠️ Error deleting image ${filename}:`, error?.message);
+        return false;
+      }
+    };
+
+    // Helper function to delete all images matching SKU prefix (including SKU-1, SKU-2, etc.)
+    const deleteAllImagesBySku = async (sku: string): Promise<number> => {
+      try {
+        const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+        const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+        const endpoint = process.env.R2_ENDPOINT;
+        const bucket = process.env.R2_BUCKET_NAME || process.env.NEXT_PUBLIC_R2_BUCKET_NAME;
+
+        if (!accessKeyId || !secretAccessKey || !endpoint || !bucket) {
+          console.warn('⚠️ R2 configuration missing, skipping image deletion');
+          return 0;
+        }
+
+        const client = new S3Client({
+          region: "auto",
+          endpoint,
+          credentials: { accessKeyId, secretAccessKey },
+        });
+
+        // Use ListObjectsV2Command to find all images matching SKU prefix
+        const listCommand = new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: sku, // This will match SKU.jpg, SKU-1.jpg, SKU-2.jpg, etc.
+        });
+
+        const listResult = await client.send(listCommand);
+        const objectsToDelete = (listResult.Contents || [])
+          .filter(obj => obj.Key && obj.Key.startsWith(sku))
+          .map(obj => obj.Key as string);
+
+        // Delete all matching images
+        let deletedCount = 0;
+        for (const key of objectsToDelete) {
+          const deleted = await deleteImageFromR2(key);
+          if (deleted) {
+            deletedCount++;
+            console.log(`✅ Deleted image: ${key}`);
+          } else {
+            console.warn(`⚠️ Failed to delete image: ${key}`);
+          }
+        }
+
+        return deletedCount;
+      } catch (error: any) {
+        console.warn(`⚠️ Error listing/deleting images for SKU ${sku}:`, error?.message);
+        return 0;
+      }
+    };
+
+    // Get all variants of this product to delete their images
+    const variantsRes = await query(
+      `SELECT variantid, sku FROM productvariants WHERE productid = $1`,
+      [product_id]
+    );
+
+    const variants = variantsRes.rows as Array<{ variantid: number; sku: string | null }>;
+
+    // Delete all images from R2 for each variant (including SKU-1, SKU-2, etc.)
+    for (const variant of variants) {
+      if (variant.sku) {
+        const deletedCount = await deleteAllImagesBySku(variant.sku);
+        if (deletedCount > 0) {
+          console.log(`✅ Deleted ${deletedCount} image(s) for variant ${variant.variantid} (SKU: ${variant.sku})`);
+        } else {
+          console.warn(`⚠️ No images found or failed to delete images for variant ${variant.variantid} (SKU: ${variant.sku})`);
+        }
+      }
+    }
+
+    // Delete product (this will cascade delete variants due to ON DELETE CASCADE)
     await query(`DELETE FROM products WHERE productid = $1`, [product_id]);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
