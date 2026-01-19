@@ -26,6 +26,8 @@ type DbVariant = {
   price: string; // numeric
   image_url: string | null;
   is_active: boolean | null;
+  attribute_value_ids: string | null;
+  attribute_ids: string | null;
 };
 
 export const revalidate = 60; // Revalidate every 60 seconds
@@ -36,14 +38,20 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 30)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
     const categoryIdParam = searchParams.get('category_id');
+    const subCategoryIdParam = searchParams.get('sub_category_id');
 
-    // Fetch products with optional filter by category (via subcategories.categoryid)
+    // Fetch products with optional filter by category and/or subcategory
     const params: any[] = [];
-    let whereSql = '';
+    const whereConditions: string[] = [];
     if (categoryIdParam) {
-      whereSql = 'WHERE sc.categoryid = $1';
+      whereConditions.push(`sc.categoryid = $${params.length + 1}`);
       params.push(Number(categoryIdParam));
     }
+    if (subCategoryIdParam) {
+      whereConditions.push(`p.subcategoryid = $${params.length + 1}`);
+      params.push(Number(subCategoryIdParam));
+    }
+    const whereSql = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
     // limit/offset are always last two params
     params.push(limit, offset);
@@ -136,8 +144,8 @@ export async function GET(req: NextRequest) {
         price: Number(v.price),
         image_url: v.image_url,
         is_active: v.is_active ?? true,
-        attribute_value_ids: v.attribute_value_ids ? v.attribute_value_ids.split(', ').map(id => parseInt(id)).filter(id => !isNaN(id)) : [],
-        attribute_ids: v.attribute_ids ? v.attribute_ids.split(', ').map(id => parseInt(id)).filter(id => !isNaN(id)) : [],
+        attribute_value_ids: v.attribute_value_ids ? v.attribute_value_ids.split(', ').map((id: string) => parseInt(id)).filter((id: number) => !isNaN(id)) : [],
+        attribute_ids: v.attribute_ids ? v.attribute_ids.split(', ').map((id: string) => parseInt(id)).filter((id: number) => !isNaN(id)) : [],
       })),
     }));
 

@@ -74,11 +74,18 @@ export default function ProductsPage() {
   const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
   const [editUploadedImage, setEditUploadedImage] = useState<File | null>(null);
   const [editVariantIsActive, setEditVariantIsActive] = useState<boolean>(true);
+  const [editCurrentImages, setEditCurrentImages] = useState<string[]>([]);
+  const [editNewImages, setEditNewImages] = useState<File[]>([]);
+  const [editNewImagePreviews, setEditNewImagePreviews] = useState<string[]>([]);
+  const [editImagesToDelete, setEditImagesToDelete] = useState<string[]>([]);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailSelectedVariant, setDetailSelectedVariant] = useState<Variant | null>(null);
   const [detailOpen, setDetailOpen] = useState<boolean>(false);
   const [selectedDetailImageIndex, setSelectedDetailImageIndex] = useState<number>(0);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [checkingInventory, setCheckingInventory] = useState<boolean>(false);
 
   const [serverProducts, setServerProducts] = useState<Product[]>(mockProducts);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
@@ -87,6 +94,7 @@ export default function ProductsPage() {
   const [variants, setVariants] = useState<any[]>([]);
   const [variantsLoading, setVariantsLoading] = useState<boolean>(false);
   const [variantsError, setVariantsError] = useState<string | null>(null);
+  const [variantsFilterCategoryId, setVariantsFilterCategoryId] = useState<string>('all');
   const [editingVariant, setEditingVariant] = useState<any>(null);
   const [isEditVariantModalOpen, setIsEditVariantModalOpen] = useState(false);
   const [isDeleteVariantModalOpen, setIsDeleteVariantModalOpen] = useState(false);
@@ -148,6 +156,8 @@ export default function ProductsPage() {
   const [attributesError, setAttributesError] = useState<string | null>(null);
   // Filter state
   const [filterCategoryId, setFilterCategoryId] = useState<string>("all");
+  const [filterSubCategoryId, setFilterSubCategoryId] = useState<string>("all");
+  const [filterSubCategories, setFilterSubCategories] = useState<UiSubCategory[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   useEffect(() => {
@@ -161,9 +171,13 @@ export default function ProductsPage() {
           setCategories(catsJson.data);
         }
 
-        const productsUrl = (filterCategoryId && filterCategoryId !== 'all')
-          ? `/api/products?limit=30&category_id=${encodeURIComponent(filterCategoryId)}`
-          : "/api/products?limit=30";
+        let productsUrl = '/api/products?limit=30';
+        if (filterCategoryId && filterCategoryId !== 'all') {
+          productsUrl += `&category_id=${encodeURIComponent(filterCategoryId)}`;
+        }
+        if (filterSubCategoryId && filterSubCategoryId !== 'all') {
+          productsUrl += `&sub_category_id=${encodeURIComponent(filterSubCategoryId)}`;
+        }
 
         const [imgRes, prodRes] = await Promise.all([
           fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
@@ -187,6 +201,30 @@ export default function ProductsPage() {
     return () => {
       isMounted = false;
     };
+  }, [filterCategoryId, filterSubCategoryId]);
+
+  // Fetch subcategories when category filter changes
+  useEffect(() => {
+    const fetchFilterSubCategories = async () => {
+      if (!filterCategoryId || filterCategoryId === 'all') {
+        setFilterSubCategories([]);
+        setFilterSubCategoryId('all');
+        return;
+      }
+      try {
+        const subRes = await fetch(`/api/sub_categories?category_id=${encodeURIComponent(filterCategoryId)}`);
+        const subJson = await subRes.json();
+        if (subJson.success) {
+          setFilterSubCategories(Array.isArray(subJson.data) ? subJson.data : []);
+        } else {
+          setFilterSubCategories([]);
+        }
+      } catch (error) {
+        console.error('Error fetching subcategories for filter:', error);
+        setFilterSubCategories([]);
+      }
+    };
+    fetchFilterSubCategories();
   }, [filterCategoryId]);
 
   // Load category/subcategory when create modal opens or category changes
@@ -245,7 +283,10 @@ export default function ProductsPage() {
     try {
       setVariantsLoading(true);
       setVariantsError(null);
-      const response = await fetch('/api/product-variants?limit=10000');
+      const url = variantsFilterCategoryId && variantsFilterCategoryId !== 'all'
+        ? `/api/product-variants?limit=10000&category_id=${encodeURIComponent(variantsFilterCategoryId)}`
+        : '/api/product-variants?limit=10000';
+      const response = await fetch(url);
       const data = await response.json();
       if (data.ok) {
         setVariants(Array.isArray(data.items) ? data.items : []);
@@ -265,7 +306,7 @@ export default function ProductsPage() {
     if (viewMode === 'variants') {
       fetchAllVariants();
     }
-  }, [viewMode]);
+  }, [viewMode, variantsFilterCategoryId]);
 
   const handleAddNewBrand = async () => {
     if (!newBrandForm.brand_name_th.trim() || !newBrandForm.brand_name_en.trim() || !newBrandForm.brand_code.trim()) {
@@ -399,9 +440,13 @@ export default function ProductsPage() {
       setBusy(true);
       setError(null);
       
-      const productsUrl = (filterCategoryId && filterCategoryId !== 'all')
-        ? `/api/products?limit=30&category_id=${encodeURIComponent(filterCategoryId)}`
-        : "/api/products?limit=30";
+      let productsUrl = '/api/products?limit=30';
+      if (filterCategoryId && filterCategoryId !== 'all') {
+        productsUrl += `&category_id=${encodeURIComponent(filterCategoryId)}`;
+      }
+      if (filterSubCategoryId && filterSubCategoryId !== 'all') {
+        productsUrl += `&sub_category_id=${encodeURIComponent(filterSubCategoryId)}`;
+      }
 
       const [imgRes, prodRes] = await Promise.all([
         fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
@@ -627,6 +672,9 @@ export default function ProductsPage() {
     const firstVariant = p.variants?.[0];
     const isActive = firstVariant?.is_active ?? false;
     
+    // Load all existing images for this product variant
+    const allImages = firstVariant?.sku ? findAllImagesBySku(firstVariant.sku) : [];
+    
     setEditForm({ 
       ...p, 
       product_name_th: p.product_name_th || p.product_name, 
@@ -635,17 +683,63 @@ export default function ProductsPage() {
     setEditImagePreview(null);
     setEditUploadedImage(null);
     setEditVariantIsActive(isActive);
+    setEditCurrentImages(allImages);
+    setEditNewImages([]);
+    setEditNewImagePreviews([]);
+    setEditImagesToDelete([]);
     setEditOpen(true);
   };
 
-  const openDetail = (p: Product) => {
+  const openDetail = (p: ProductWithDisplayVariant | Product, variant?: Variant | null) => {
     setDetailProduct(p);
+    // Use provided variant, or displayVariant if available, or first variant
+    const selectedVariant = variant || ('displayVariant' in p ? p.displayVariant : null) || p.variants?.[0] || null;
+    setDetailSelectedVariant(selectedVariant);
     setDetailOpen(true);
   };
 
-  const openDelete = (p: Product) => {
+  const openDelete = async (p: Product) => {
     setDeleteProduct(p);
     setDeleteOpen(true);
+    setDeleteError(null);
+    setCheckingInventory(true);
+    
+    // Check if any variant of this product exists in inventory
+    try {
+      if (p.variants && p.variants.length > 0) {
+        const variantIds = p.variants.map(v => v.variant_id);
+        const inventoryChecks = await Promise.all(
+          variantIds.map(async (variantId) => {
+            try {
+              const inventoryRes = await fetch(`/api/inventory?variant_id=${variantId}&limit=1`);
+              const inventoryData = await inventoryRes.json();
+              if (inventoryData.ok && inventoryData.items && inventoryData.items.length > 0) {
+                return { variantId, hasInventory: true, inventoryItem: inventoryData.items[0] };
+              }
+              return { variantId, hasInventory: false };
+            } catch (error) {
+              console.error(`Error checking inventory for variant ${variantId}:`, error);
+              return { variantId, hasInventory: false };
+            }
+          })
+        );
+        
+        const variantsWithInventory = inventoryChecks.filter(check => check.hasInventory);
+        if (variantsWithInventory.length > 0) {
+          const variantSkus = variantsWithInventory
+            .map(check => {
+              const variant = p.variants?.find(v => v.variant_id === check.variantId);
+              return variant?.sku || `Variant ${check.variantId}`;
+            })
+            .join(', ');
+          setDeleteError(`ไม่สามารถลบสินค้านี้ได้ เนื่องจากมีสินค้าอยู่ในสต็อก (${variantSkus}) กรุณาลบสินค้าจากสต็อกก่อน`);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking inventory:', error);
+    } finally {
+      setCheckingInventory(false);
+    }
   };
 
   // Generate BASE SKU prefix (BRAND-ATTR) for Step 2 preview
@@ -764,21 +858,23 @@ export default function ProductsPage() {
   const findImageBySku = (baseSku: string | null) => {
     if (!baseSku) return null;
     
-    // Take full 10 characters of the BASE SKU (XXX-YYY-ZZ format)
-    const skuMatch = baseSku.substring(0, 10);
+    // Use the full SKU to find matching images
+    // Images are stored as "062-CAR-PLN-850.jpg", "062-CAR-PLN-850-1.jpg", etc.
+    const baseSkuMatch = baseSku; // Use the SKU as-is from database
     
-    // Look for image with matching SKU (exact 10 character match)
+    // Find the first image that matches the base SKU pattern
     const matchingImage = images.find(img => {
-      // Extract SKU from image key (remove file extension)
       const imageSku = img.key.split('.')[0]; // Remove file extension
-      const imageSkuMatch = imageSku.substring(0, 10);
-      return imageSkuMatch === skuMatch;
+      // Check if image SKU starts with base SKU followed by "-" and a number
+      // e.g., "062-CAR-PLN-850-1" matches base SKU "062-CAR-PLN-850"
+      // or exact match for base SKU itself
+      return imageSku === baseSkuMatch || imageSku.startsWith(baseSkuMatch + '-');
     });
     
     if (matchingImage) {
-      console.log(`✅ Found image for SKU ${baseSku} (match: ${skuMatch}): ${matchingImage.key}`);
+      console.log(`✅ Found image for SKU ${baseSku}: ${matchingImage.key}`);
     } else {
-      console.log(`❌ No image found for SKU ${baseSku} (match: ${skuMatch})`);
+      console.log(`❌ No image found for SKU ${baseSku}`);
     }
     
     return matchingImage?.url || null;
@@ -858,6 +954,38 @@ export default function ProductsPage() {
     if (!deleteProduct) return;
     try {
       setBusy(true);
+      
+      // Check if any variant of this product exists in inventory
+      if (deleteProduct.variants && deleteProduct.variants.length > 0) {
+        const variantIds = deleteProduct.variants.map(v => v.variant_id);
+        const inventoryChecks = await Promise.all(
+          variantIds.map(async (variantId) => {
+            try {
+              const inventoryRes = await fetch(`/api/inventory?variant_id=${variantId}&limit=1`);
+              const inventoryData = await inventoryRes.json();
+              if (inventoryData.ok && inventoryData.items && inventoryData.items.length > 0) {
+                return { variantId, hasInventory: true, inventoryItem: inventoryData.items[0] };
+              }
+              return { variantId, hasInventory: false };
+            } catch (error) {
+              console.error(`Error checking inventory for variant ${variantId}:`, error);
+              return { variantId, hasInventory: false };
+            }
+          })
+        );
+        
+        const variantsWithInventory = inventoryChecks.filter(check => check.hasInventory);
+        if (variantsWithInventory.length > 0) {
+          const variantSkus = variantsWithInventory
+            .map(check => {
+              const variant = deleteProduct.variants?.find(v => v.variant_id === check.variantId);
+              return variant?.sku || `Variant ${check.variantId}`;
+            })
+            .join(', ');
+          throw new Error(`ไม่สามารถลบสินค้านี้ได้ เนื่องจากมีสินค้าอยู่ในสต็อก (${variantSkus}) กรุณาลบสินค้าจากสต็อกก่อน`);
+        }
+      }
+      
       const res = await fetch(`/api/products?id=${deleteProduct.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "ลบสินค้าไม่สำเร็จ");
@@ -871,8 +999,9 @@ export default function ProductsPage() {
     }
   };
 
-  // Filter products based on search query
+  // Filter products based on search query and subcategory
   const filteredProducts = serverProducts.filter((product) => {
+    // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       const matchesSearch = 
@@ -881,41 +1010,46 @@ export default function ProductsPage() {
         product.variants?.some(v => v.sku?.toLowerCase().includes(query));
       if (!matchesSearch) return false;
     }
+    
+    // Filter by subcategory (if selected and not 'all')
+    if (filterSubCategoryId && filterSubCategoryId !== 'all') {
+      const selectedSubCategory = filterSubCategories.find(sc => String(sc.sub_category_id) === filterSubCategoryId);
+      if (selectedSubCategory) {
+        // Match by subcategory name (Thai name)
+        const productSubCategoryName = product.sub_categories_name;
+        if (productSubCategoryName !== selectedSubCategory.sub_category_name) {
+          return false;
+        }
+      }
+    }
+    
     return true;
+  });
+
+  // Expand products to show each variant separately for display
+  type ProductWithDisplayVariant = Product & { displayVariant: Variant | null };
+  const expandedProductsForDisplay: ProductWithDisplayVariant[] = filteredProducts.flatMap((product): ProductWithDisplayVariant[] => {
+    if (!product.variants || product.variants.length === 0) {
+      return [{ ...product, displayVariant: null }];
+    }
+    // Create a separate display item for each variant
+    return product.variants.map((variant): ProductWithDisplayVariant => ({
+      ...product,
+      displayVariant: variant,
+    }));
   });
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <h1 className="text-2xl font-semibold text-gray-900">จัดการสินค้า</h1>
-          <p className="text-sm text-gray-600 mt-0.5">จัดการและแก้ไขข้อมูลสินค้าบนร้านค้า</p>
-        </div>
-        <div className="flex gap-2 items-center">
-          {/* Search Input */}
-          <div className="relative hidden sm:block">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <Input
-              type="text"
-              placeholder="ค้นหาชื่อสินค้า"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-8 w-64 text-xs"
-            />
+      <div className="space-y-4">
+        {/* First Row: Title and Action Buttons */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <h1 className="text-2xl font-semibold text-gray-900">จัดการสินค้า</h1>
+            <p className="text-sm text-gray-600 mt-0.5">จัดการและแก้ไขข้อมูลสินค้าบนร้านค้า</p>
           </div>
-          {/* Category Dropdown */}
-          <Select value={filterCategoryId} onValueChange={(val: string) => { setFilterCategoryId(val); }}>
-            <SelectTrigger className="h-8 min-w-[200px] w-auto border-gray-300 whitespace-nowrap text-xs">
-              <SelectValue placeholder="ทุกหมวดหมู่" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {/* View Toggle Buttons */}
+          <div className="flex gap-2 items-center">
+            {/* View Toggle Buttons */}
           <Button
             variant="outline"
             size="sm"
@@ -977,9 +1111,55 @@ export default function ProductsPage() {
             <span className="hidden sm:inline">เพิ่มสินค้าใหม่</span>
             <span className="sm:hidden">เพิ่ม</span>
           </Button>
+          </div>
+        </div>
+        
+        {/* Second Row: Search and Category Filter */}
+        <div className="flex gap-2 items-center">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="ค้นหาชื่อสินค้า"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-8 w-64 text-xs"
+            />
+          </div>
+          {/* Category Dropdown */}
+          <Select value={filterCategoryId} onValueChange={(val: string) => { 
+            setFilterCategoryId(val);
+            setFilterSubCategoryId('all'); // Reset subcategory when category changes
+          }}>
+            <SelectTrigger className="h-8 min-w-[200px] w-auto border-gray-300 whitespace-nowrap text-xs">
+              <SelectValue placeholder="ทุกหมวดหมู่" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Subcategory Dropdown */}
+          {filterCategoryId && filterCategoryId !== 'all' && filterSubCategories.length > 0 && (
+            <Select value={filterSubCategoryId} onValueChange={(val: string) => { setFilterSubCategoryId(val); }}>
+              <SelectTrigger className="h-8 min-w-[200px] w-auto border-gray-300 whitespace-nowrap text-xs">
+                <SelectValue placeholder="ทุกหมวดหมู่ย่อย" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทุกหมวดหมู่ย่อย</SelectItem>
+                {filterSubCategories.map((sc) => (
+                  <SelectItem key={sc.sub_category_id} value={String(sc.sub_category_id)}>
+                    {sc.sub_category_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
-      
 
       {/* Edit Mode Notice */}
       {isEditMode && viewMode === 'variants' && (
@@ -993,21 +1173,18 @@ export default function ProductsPage() {
         // Picture View - Grid of images only
         <>
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
-          {filteredProducts.map((product) => {
-            // Try to find image by variant SKU first, then fallback to variant image
-            const firstVariant = product.variants?.[0];
-            const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
-            const variantImage = product.variants?.find(v => v.image_url)?.image_url;
+          {expandedProductsForDisplay.map((product, index) => {
+            // Use displayVariant if available, otherwise fallback to first variant
+            const displayVariant = product.displayVariant || product.variants?.[0];
+            const skuImage = displayVariant?.sku ? findImageBySku(displayVariant.sku) : null;
+            const variantImage = displayVariant?.image_url;
             const productImage = skuImage || variantImage;
-            const minPrice = product.variants?.length > 0 
-              ? Math.min(...product.variants.map(v => v.price))
-              : 0;
             
             return (
               <div
-                key={product.id}
+                key={`${product.id}-${displayVariant?.variant_id || index}`}
                 className="group cursor-pointer relative"
-                onClick={() => isEditMode ? openEdit(product) : openDetail(product)}
+                onClick={() => isEditMode ? openEdit(product) : openDetail(product, product.displayVariant)}
                 title={product.product_name}
               >
                 <ResponsiveImage
@@ -1032,24 +1209,18 @@ export default function ProductsPage() {
       ) : viewMode === 'card' ? (
         // Card View - Detailed cards
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
-          {filteredProducts.map((product) => {
-            // Try to find image by variant SKU first, then fallback to variant image
-            const firstVariant = product.variants?.[0];
-            const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
-            const variantImage = product.variants?.find(v => v.image_url)?.image_url;
+          {expandedProductsForDisplay.map((product, index) => {
+            // Use displayVariant if available, otherwise fallback to first variant
+            const displayVariant = product.displayVariant || product.variants?.[0];
+            const skuImage = displayVariant?.sku ? findImageBySku(displayVariant.sku) : null;
+            const variantImage = displayVariant?.image_url;
             const productImage = skuImage || variantImage;
-            const minPrice = product.variants?.length > 0 
-              ? Math.min(...product.variants.map(v => v.price))
-              : 0;
-            const maxPrice = product.variants?.length > 0 
-              ? Math.max(...product.variants.map(v => v.price))
-              : 0;
             
             return (
               <Card 
-                key={product.id} 
+                key={`${product.id}-${displayVariant?.variant_id || index}`} 
                 className="overflow-hidden hover:shadow-lg transition-shadow duration-200 cursor-pointer"
-                onClick={() => isEditMode ? openEdit(product) : openDetail(product)}
+                onClick={() => isEditMode ? openEdit(product) : openDetail(product, product.displayVariant)}
               >
                 <CardContent className="p-0">
                   <div className="flex flex-col h-full">
@@ -1066,16 +1237,13 @@ export default function ProductsPage() {
                     <div className="p-4 space-y-2 flex-1 flex flex-col">
                       <h2 className="text-base font-semibold line-clamp-2">{product.product_name_th || product.product_name}</h2>
                       <div className="flex flex-col gap-1 text-sm text-gray-700">
-                        {firstVariant?.sku && (
-                          <span className="truncate">SKU: <span className="font-medium">{firstVariant.sku}</span></span>
+                        {displayVariant?.sku && (
+                          <span className="truncate">SKU: <span className="font-medium">{displayVariant.sku}</span></span>
                         )}
-                        {product.variants && product.variants.length > 0 && (
+                        {displayVariant && (
                           <span className="text-gray-600">
                             ราคา: <span className="font-bold text-blue-600">
-                              {minPrice === maxPrice 
-                                ? `${minPrice.toFixed(2)} ฿`
-                                : `${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)} ฿`
-                              }
+                              {displayVariant.price.toFixed(2)} ฿
                             </span>
                           </span>
                         )}
@@ -1093,18 +1261,36 @@ export default function ProductsPage() {
           <CardContent className="p-0">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
               <h2 className="text-base font-semibold">ความหลากหลายของสินค้า (Products)</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  // TODO: Implement export functionality
-                  console.log('Export variants');
-                }}
-                className="h-9 flex items-center gap-2"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span className="text-sm">ส่งออกข้อมูล</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={variantsFilterCategoryId}
+                  onValueChange={(value: string) => setVariantsFilterCategoryId(value)}
+                >
+                  <SelectTrigger className="w-[200px] h-9">
+                    <SelectValue placeholder="กรองตามประเภท" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">ทุกประเภท</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.category_id} value={String(cat.category_id)}>
+                        {cat.category_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // TODO: Implement export functionality
+                    console.log('Export variants');
+                  }}
+                  className="h-9 flex items-center gap-2"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span className="text-sm">ส่งออกข้อมูล</span>
+                </Button>
+              </div>
             </div>
             <div className="p-4 space-y-4">
               {variantsLoading ? (
@@ -1113,11 +1299,12 @@ export default function ProductsPage() {
                 <div className="text-sm text-red-600">{variantsError}</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <Table className="min-w-[900px]">
+                  <Table className="min-w-[1100px]">
                     <THead>
                       <TR>
-                        <TH>รหัส</TH>
-                        <TH>ชื่อสินค้า</TH>
+                        <TH className="w-16">รหัส</TH>
+                        <TH className="w-96">ชื่อสินค้า</TH>
+                        <TH>ประเภทย่อย</TH>
                         <TH>คุณสมบัติ</TH>
                         <TH>SKU</TH>
                         <TH>ราคา</TH>
@@ -1127,7 +1314,7 @@ export default function ProductsPage() {
                     <TBody>
                       {variants.length === 0 ? (
                         <TR>
-                          <TD colSpan={6} className="text-center text-gray-500 py-8">
+                          <TD colSpan={7} className="text-center text-gray-500 py-8">
                             ไม่พบข้อมูลความหลากหลายของสินค้า
                           </TD>
                         </TR>
@@ -1147,9 +1334,20 @@ export default function ProductsPage() {
                             }}
                             className={isEditMode ? 'cursor-pointer hover:bg-accent/40' : ''}
                           >
-                            <TD>{v.variant_id}</TD>
-                            <TD>{v.product_name_th || v.product_name}</TD>
-                            <TD>{v.attribute_label || '-'}</TD>
+                            <TD className="w-16">{v.variant_id}</TD>
+                            <TD className="w-96">{v.product_name_th || v.product_name}</TD>
+                            <TD>{v.sub_category_name_th || '-'}</TD>
+                            <TD>
+                              {v.attributes && Array.isArray(v.attributes) && v.attributes.length > 0 ? (
+                                <div className="space-y-1">
+                                  {v.attributes.map((attr: { attribute_name_th: string; attribute_value_th: string }, idx: number) => (
+                                    <div key={idx} className="text-sm">
+                                      {attr.attribute_name_th}: {attr.attribute_value_th}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : '-'}
+                            </TD>
                             <TD>{v.sku || '-'}</TD>
                             <TD>{`฿${Number(v.price).toFixed(2)}`}</TD>
                             <TD>
@@ -1178,6 +1376,10 @@ export default function ProductsPage() {
         setEditImagePreview(null);
         setEditUploadedImage(null);
         setEditVariantIsActive(true);
+        setEditCurrentImages([]);
+        setEditNewImages([]);
+        setEditNewImagePreviews([]);
+        setEditImagesToDelete([]);
       }} title="แก้ไขสินค้า">
         {editForm && (
           <div className="space-y-4">
@@ -1281,67 +1483,131 @@ export default function ProductsPage() {
 
               {/* Image Upload */}
               <div>
-                <Label>รูปภาพสินค้า</Label>
-                <div className="mt-2 space-y-2">
-                  {editImagePreview ? (
-                    <div className="flex flex-col items-center space-y-2">
-                      <div className="relative">
-                        <img 
-                          src={editImagePreview} 
-                          alt="Preview" 
-                          className="max-w-xs max-h-48 rounded-lg border border-gray-300"
-                        />
-                        <button
-                          onClick={() => {
-                            setEditUploadedImage(null);
-                            setEditImagePreview(null);
-                            // Check if there's still a current image
-                            const firstVariant = editForm.variants?.[0];
-                            const hasCurrentImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
-                            const hasVariantImage = editForm.variants?.find(v => v.image_url)?.image_url;
-                            if (!hasCurrentImage && !hasVariantImage) {
-                              setEditVariantIsActive(false); // Set to inactive if no image remains
-                            }
-                          }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
-                        >
-                          ×
-                        </button>
-              </div>
-              </div>
-                  ) : (
-                    <div className="flex flex-col items-center">
-                      {editForm.variants && editForm.variants.length > 0 && (() => {
-                        const firstVariant = editForm.variants[0];
-                        const skuImage = firstVariant?.sku ? findImageBySku(firstVariant.sku) : null;
-                        const variantImage = editForm.variants.find(v => v.image_url)?.image_url;
-                        const currentImage = skuImage || variantImage;
-                        return currentImage ? (
-                          <img src={currentImage} alt="Current" className="max-w-xs max-h-48 rounded-lg border border-gray-300" />
-                        ) : null;
-                      })()}
-            </div>
+                <Label>รูปภาพสินค้า (สูงสุด 4 รูป)</Label>
+                <div className="mt-2 space-y-4">
+                  {/* Current Images */}
+                  {editCurrentImages.length > 0 && (
+                    <div>
+                      <Label className="text-sm text-gray-600 mb-2 block">รูปภาพปัจจุบัน</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        {editCurrentImages.map((imgUrl, idx) => {
+                          if (editImagesToDelete.includes(imgUrl)) return null;
+                          // Calculate total remaining images (current - deleted + new)
+                          const totalRemainingImages = editCurrentImages.length - editImagesToDelete.length + editNewImages.length;
+                          const canDelete = totalRemainingImages > 1;
+                          
+                          return (
+                            <div key={idx} className="relative">
+                              <img 
+                                src={imgUrl} 
+                                alt={`Current ${idx + 1}`} 
+                                className="w-full h-32 object-cover rounded-lg border border-gray-300"
+                              />
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditImagesToDelete([...editImagesToDelete, imgUrl]);
+                                  }}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                                >
+                                  ×
+                                </button>
+                              )}
+                              {!canDelete && (
+                                <div className="absolute -top-2 -right-2 bg-gray-400 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm cursor-not-allowed" title="ต้องมีรูปภาพอย่างน้อย 1 รูป">
+                                  ×
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                  <label className="flex items-center justify-center w-full px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setEditUploadedImage(file);
-                          setEditVariantIsActive(true); // Set to active when image is uploaded
-                          const reader = new FileReader();
-                          reader.onload = (e) => {
-                            setEditImagePreview(e.target?.result as string);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                    <span className="text-sm text-gray-700">เลือกรูปภาพใหม่</span>
-                  </label>
+                  
+                  {/* New Images */}
+                  {editNewImagePreviews.length > 0 && (
+                    <div>
+                      <Label className="text-sm text-gray-600 mb-2 block">รูปภาพใหม่</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        {editNewImagePreviews.map((preview, idx) => (
+                          <div key={idx} className="relative">
+                            <img 
+                              src={preview} 
+                              alt={`New ${idx + 1}`} 
+                              className="w-full h-32 object-cover rounded-lg border border-gray-300"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newPreviews = [...editNewImagePreviews];
+                                const newImages = [...editNewImages];
+                                newPreviews.splice(idx, 1);
+                                newImages.splice(idx, 1);
+                                setEditNewImagePreviews(newPreviews);
+                                setEditNewImages(newImages);
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Upload Button */}
+                  {(editCurrentImages.length - editImagesToDelete.length + editNewImages.length) < 4 && (
+                    <label className="flex items-center justify-center w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          const maxFiles = 4 - (editCurrentImages.length - editImagesToDelete.length + editNewImages.length);
+                          const filesToAdd = files.slice(0, maxFiles);
+                          
+                          if (filesToAdd.length === 0) return;
+                          
+                          // Validate file size (max 5MB each)
+                          const validFiles: File[] = [];
+                          filesToAdd.forEach(file => {
+                            if (file.size > 5 * 1024 * 1024) {
+                              setError(`ไฟล์ ${file.name} มีขนาดเกิน 5 MB`);
+                              return;
+                            }
+                            validFiles.push(file);
+                          });
+                          
+                          if (validFiles.length === 0) return;
+                          
+                          // Generate previews
+                          const newPreviews: string[] = [];
+                          validFiles.forEach(file => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                              newPreviews.push(e.target?.result as string);
+                              if (newPreviews.length === validFiles.length) {
+                                setEditNewImagePreviews([...editNewImagePreviews, ...newPreviews]);
+                                setEditNewImages([...editNewImages, ...validFiles]);
+                                setEditVariantIsActive(true);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          });
+                        }}
+                      />
+                      <span className="text-sm text-gray-700">เพิ่มรูปภาพ ({editCurrentImages.length - editImagesToDelete.length + editNewImages.length}/4)</span>
+                    </label>
+                  )}
+                  
+                  {(editCurrentImages.length - editImagesToDelete.length + editNewImages.length) >= 4 && (
+                    <p className="text-sm text-gray-500">ถึงจำนวนสูงสุดแล้ว (4 รูป)</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1370,6 +1636,10 @@ export default function ProductsPage() {
                   setEditImagePreview(null);
                   setEditUploadedImage(null);
                   setEditVariantIsActive(true);
+                  setEditCurrentImages([]);
+                  setEditNewImages([]);
+                  setEditNewImagePreviews([]);
+                  setEditImagesToDelete([]);
                 }}>ยกเลิก</Button>
                 <Button onClick={async () => {
                   if (!editForm) return;
@@ -1414,51 +1684,94 @@ export default function ProductsPage() {
                       }
                     }
                     
-                    // Upload image if provided (use first variant SKU or product ID)
-                    if (editUploadedImage) {
-                      const firstVariant = editForm.variants?.[0];
-                      const skuToUse = firstVariant?.sku || `${String(editForm.id).padStart(3, '0')}-XXX-XX`;
-                      
-                      // Delete old image if exists (same SKU)
+                    // Handle image deletion and upload
+                    const firstVariant = editForm.variants?.[0];
+                    const baseSku = firstVariant?.sku || `${String(editForm.id).padStart(3, '0')}-XXX-XX`;
+                    
+                    // Delete images marked for deletion from object storage
+                    for (const imgUrl of editImagesToDelete) {
                       try {
-                        const deleteRes = await fetch(`/api/upload?filename=${encodeURIComponent(`${skuToUse}.jpg`)}`, {
+                        // Extract filename from URL (handle query parameters and path)
+                        const urlObj = new URL(imgUrl);
+                        const pathParts = urlObj.pathname.split('/');
+                        let filename = pathParts[pathParts.length - 1];
+                        
+                        // Remove query parameters if any
+                        if (filename.includes('?')) {
+                          filename = filename.split('?')[0];
+                        }
+                        
+                        if (!filename) {
+                          console.warn('⚠️ Warning: Could not extract filename from URL:', imgUrl);
+                          continue;
+                        }
+                        
+                        const deleteRes = await fetch(`/api/upload?filename=${encodeURIComponent(filename)}`, {
                           method: 'DELETE',
                         });
                         const deleteData = await deleteRes.json();
                         if (deleteData.ok) {
-                          console.log('✅ Old image deleted:', `${skuToUse}.jpg`);
+                          console.log('✅ Image deleted from object storage:', filename);
                         } else {
-                          console.log('ℹ️ No old image to delete or already deleted');
+                          console.warn('⚠️ Warning: Failed to delete image:', deleteData.error || 'Unknown error');
                         }
-                      } catch (deleteError) {
-                        console.warn('⚠️ Warning: Failed to delete old image (continuing anyway):', deleteError);
+                      } catch (deleteError: any) {
+                        console.warn('⚠️ Warning: Failed to delete image from object storage:', deleteError?.message || deleteError);
+                      }
+                    }
+                    
+                    // Upload new images
+                    if (editNewImages.length > 0) {
+                      // Find the next available image number
+                      const existingImageNumbers = editCurrentImages
+                        .filter(img => !editImagesToDelete.includes(img))
+                        .map(img => {
+                          const urlParts = img.split('/');
+                          const filename = urlParts[urlParts.length - 1];
+                          const match = filename.match(/-(\d+)\.jpg$/);
+                          return match ? parseInt(match[1]) : 0;
+                        })
+                        .filter(num => num > 0);
+                      
+                      let nextImageNumber = existingImageNumbers.length > 0 
+                        ? Math.max(...existingImageNumbers) + 1 
+                        : 1;
+                      
+                      for (let i = 0; i < editNewImages.length; i++) {
+                        const file = editNewImages[i];
+                        const imageSku = `${baseSku}-${nextImageNumber}`;
+                        nextImageNumber++;
+                        
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('newName', `${imageSku}.jpg`);
+                        
+                        try {
+                          const uploadRes = await fetch('/api/upload', {
+                            method: 'POST',
+                            body: formData,
+                          });
+                          
+                          const uploadData = await uploadRes.json();
+                          if (uploadData.ok) {
+                            console.log('✅ New image uploaded:', uploadData.filename);
+                          } else {
+                            console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
+                          }
+                        } catch (uploadError) {
+                          console.warn('⚠️ Warning: Failed to upload image:', uploadError);
+                        }
                       }
                       
-                      // Upload new image
-                      const formData = new FormData();
-                      formData.append('file', editUploadedImage);
-                      formData.append('newName', `${skuToUse}.jpg`);
-                      
-                      const uploadRes = await fetch('/api/upload', {
-                        method: 'POST',
-                        body: formData,
-                      });
-                      
-                      const uploadData = await uploadRes.json();
-                      if (!uploadData.ok) {
-                        console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
-                      } else {
-                        console.log('✅ New image uploaded:', uploadData.filename);
-                        // Refresh images list after successful upload
-                        try {
-                          const imgRes = await fetch("/api/r2-objects?limit=50", { cache: "no-store" });
-                          const imgData = await imgRes.json();
-                          if (imgData.ok) {
-                            setImages(imgData.items || []);
-                          }
-                        } catch (imgError) {
-                          console.warn('⚠️ Warning: Failed to refresh images:', imgError);
+                      // Refresh images list after successful upload
+                      try {
+                        const imgRes = await fetch("/api/r2-objects?limit=50", { cache: "no-store" });
+                        const imgData = await imgRes.json();
+                        if (imgData.ok) {
+                          setImages(imgData.items || []);
                         }
+                      } catch (imgError) {
+                        console.warn('⚠️ Warning: Failed to refresh images:', imgError);
                       }
                     }
                     
@@ -1467,6 +1780,10 @@ export default function ProductsPage() {
                     setEditImagePreview(null);
                     setEditUploadedImage(null);
                     setEditVariantIsActive(true);
+                    setEditCurrentImages([]);
+                    setEditNewImages([]);
+                    setEditNewImagePreviews([]);
+                    setEditImagesToDelete([]);
                     await refetchProducts();
                   } catch (e: any) {
                     setError(e?.message || "แก้ไขสินค้าไม่สำเร็จ");
@@ -2202,12 +2519,14 @@ export default function ProductsPage() {
       <Modal isOpen={detailOpen} onClose={() => { 
         setDetailOpen(false); 
         setDetailProduct(null);
+        setDetailSelectedVariant(null);
         setSelectedDetailImageIndex(0);
       }} title="รายละเอียดสินค้า">
         {detailProduct && (() => {
-          const firstVariant = detailProduct.variants?.[0];
-          const allImages = firstVariant?.sku ? findAllImagesBySku(firstVariant.sku) : [];
-          const variantImage = detailProduct.variants?.find(v => v.image_url)?.image_url;
+          // Use selected variant or fallback to first variant
+          const selectedVariant = detailSelectedVariant || detailProduct.variants?.[0];
+          const allImages = selectedVariant?.sku ? findAllImagesBySku(selectedVariant.sku) : [];
+          const variantImage = selectedVariant?.image_url;
           const productImages = allImages.length > 0 ? allImages : (variantImage ? [variantImage] : []);
           const currentImage = productImages[selectedDetailImageIndex] || productImages[0] || '';
           
@@ -2309,7 +2628,12 @@ export default function ProductsPage() {
       </Modal>
 
       {/* Delete Confirmation Modal */}
-      <Modal isOpen={deleteOpen} onClose={() => { setDeleteOpen(false); setDeleteProduct(null); }} title="ยืนยันการลบสินค้า">
+      <Modal isOpen={deleteOpen} onClose={() => { 
+        setDeleteOpen(false); 
+        setDeleteProduct(null);
+        setDeleteError(null);
+        setCheckingInventory(false);
+      }} title="ยืนยันการลบสินค้า">
         {deleteProduct && (
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
@@ -2368,10 +2692,28 @@ export default function ProductsPage() {
               คุณต้องการลบสินค้า <span className="font-medium">"{deleteProduct.product_name}"</span> หรือไม่?
             </p>
 
+            {checkingInventory && (
+              <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg">
+                กำลังตรวจสอบสต็อกสินค้า...
+              </div>
+            )}
+
+            {deleteError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">
+                <div className="font-semibold mb-1">ไม่สามารถลบสินค้าได้:</div>
+                <div>{deleteError}</div>
+              </div>
+            )}
+
             <div className="flex items-center justify-end space-x-3 pt-4">
               <Button
                 variant="outline"
-                onClick={() => { setDeleteOpen(false); setDeleteProduct(null); }}
+                onClick={() => { 
+                  setDeleteOpen(false); 
+                  setDeleteProduct(null);
+                  setDeleteError(null);
+                  setCheckingInventory(false);
+                }}
                 disabled={busy}
               >
                 ยกเลิก
@@ -2379,7 +2721,7 @@ export default function ProductsPage() {
               <Button
                 variant="destructive"
                 onClick={handleDelete}
-                disabled={busy}
+                disabled={busy || !!deleteError || checkingInventory}
               >
                 {busy ? "กำลังลบ..." : "ลบสินค้า"}
               </Button>

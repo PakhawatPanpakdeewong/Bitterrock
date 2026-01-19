@@ -203,7 +203,6 @@ CREATE TABLE IF NOT EXISTS OrderItems (
 -- Inventory table
 CREATE TABLE IF NOT EXISTS Inventories (
     InventoryID SERIAL PRIMARY KEY,
-    ProductID INTEGER REFERENCES Products(ProductID) ON DELETE CASCADE,
     VariantID INTEGER REFERENCES ProductVariants(VariantID) ON DELETE CASCADE,
     WarehouseID INTEGER REFERENCES Warehouses(WarehouseID) ON DELETE CASCADE,
     StockQuantity INTEGER NOT NULL CHECK (StockQuantity >= 0),

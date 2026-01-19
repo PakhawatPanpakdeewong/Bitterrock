@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const warehouseId = searchParams.get('warehouse_id');
-    const productId = searchParams.get('product_id');
+    const variantId = searchParams.get('variant_id');
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 50)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
 
@@ -38,9 +38,9 @@ export async function GET(req: NextRequest) {
       params.push(Number(warehouseId));
     }
 
-    if (productId) {
-      whereConditions.push(`i.productid = $${params.length + 1}`);
-      params.push(Number(productId));
+    if (variantId) {
+      whereConditions.push(`i.variantid = $${params.length + 1}`);
+      params.push(Number(variantId));
     }
 
     const whereSql = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -50,7 +50,6 @@ export async function GET(req: NextRequest) {
     const inventoryRes = await query(
       `SELECT 
         i.inventoryid as inventory_id,
-        i.productid as product_id,
         i.variantid as variant_id,
         i.warehouseid as warehouse_id,
         i.stockquantity as stock_quantity,
@@ -58,6 +57,7 @@ export async function GET(req: NextRequest) {
         i.availablequantity as available_quantity,
         i.expireddate as expired_date,
         i.createddate as created_date,
+        p.productid as product_id,
         p.productnameth as product_name_th,
         p.productnameen as product_name_en,
         sc.subcategorynameth as sub_category_name,
@@ -68,15 +68,15 @@ export async function GET(req: NextRequest) {
         STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
         w.warehousename as warehouse_name
       FROM inventories i
-      JOIN products p ON p.productid = i.productid
-      LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
       LEFT JOIN productvariants pv ON pv.variantid = i.variantid
+      LEFT JOIN products p ON p.productid = pv.productid
+      LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
       LEFT JOIN productvariantattributes pva ON pva.variantid = pv.variantid
       LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
       JOIN warehouses w ON w.warehouseid = i.warehouseid
       ${whereSql}
-      GROUP BY i.inventoryid, i.productid, i.variantid, i.warehouseid, i.stockquantity, i.reservedquantity, 
-               i.availablequantity, i.expireddate, i.createddate, p.productnameth, p.productnameen, 
+      GROUP BY i.inventoryid, i.variantid, i.warehouseid, i.stockquantity, i.reservedquantity, 
+               i.availablequantity, i.expireddate, i.createddate, p.productid, p.productnameth, p.productnameen, 
                sc.subcategorynameth, pv.sku, pv.price, pv.isactive, w.warehousename
       ORDER BY i.inventoryid DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -119,18 +119,17 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      product_id,
-      variant_id = null,
+      variant_id,
       warehouse_id,
       stock_quantity,
       reserved_quantity = 0,
       expired_date = null,
     } = body;
 
-    if (!product_id || !warehouse_id || stock_quantity === undefined) {
+    if (!variant_id || !warehouse_id || stock_quantity === undefined) {
       return NextResponse.json({ 
         ok: false, 
-        error: 'product_id, warehouse_id, and stock_quantity are required' 
+        error: 'variant_id, warehouse_id, and stock_quantity are required' 
       }, { status: 400 });
     }
 
@@ -140,11 +139,10 @@ export async function POST(req: NextRequest) {
     const availableQuantity = Math.max(0, stockQty - reservedQty);
 
     const insertRes = await query(
-      `INSERT INTO inventories (productid, variantid, warehouseid, stockquantity, reservedquantity, availablequantity, expireddate)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO inventories (variantid, warehouseid, stockquantity, reservedquantity, availablequantity, expireddate)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING inventoryid as inventory_id`,
       [
-        product_id,
         variant_id,
         warehouse_id,
         stockQty,

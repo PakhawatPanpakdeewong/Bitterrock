@@ -65,9 +65,13 @@ type Product = {
   base_sku: string | null;
   variants: Array<{
     variant_id: number;
-    variant_name: string;
+    variant_name?: string;
     sku: string | null;
     price: number;
+    attributes?: Array<{
+      attribute_name_th: string;
+      attribute_value_th: string;
+    }>;
   }>;
 };
 
@@ -362,6 +366,8 @@ export default function InventoryPage() {
         errors.sub_category_id = 'กรุณาเลือกหมวดย่อย';
       } else if (!formData.product_id) {
         errors.product_id = 'กรุณาเลือกสินค้า';
+      } else if (!formData.variant_id) {
+        errors.variant_id = 'กรุณาเลือกรูปแบบสินค้า';
       }
     } else if (step === 2) {
       if (!formData.warehouse_id) {
@@ -400,8 +406,7 @@ export default function InventoryPage() {
     try {
       setSubmitting(true);
       const payload = {
-        product_id: formData.product_id,
-        variant_id: formData.variant_id || null,
+        variant_id: formData.variant_id,
         warehouse_id: formData.warehouse_id,
         stock_quantity: formData.stock_quantity,
         reserved_quantity: formData.reserved_quantity || 0,
@@ -1308,12 +1313,12 @@ export default function InventoryPage() {
                     <Select
                       value={formData.product_id?.toString() || ''}
                       onValueChange={(value: string) => {
-                        setFormData(prev => ({
-                          ...prev,
-                          product_id: value ? Number(value) : null,
-                          variant_id: null,
-                        }));
-                        setFormErrors(prev => ({ ...prev, product_id: undefined }));
+                      setFormData(prev => ({
+                        ...prev,
+                        product_id: value ? Number(value) : null,
+                        variant_id: null,
+                      }));
+                      setFormErrors(prev => ({ ...prev, product_id: undefined, variant_id: undefined }));
                       }}
                     >
                       <SelectTrigger id="product" className="mt-1">
@@ -1352,38 +1357,70 @@ export default function InventoryPage() {
               {/* Variant Selection */}
               {selectedProduct && (
                 <div>
-                  <Label htmlFor="variant" className="text-sm font-medium">
-                    เลือกรูปแบบสินค้า (ถ้ามี)
+                  <Label className="text-sm font-medium mb-2 block">
+                    เลือกรูปแบบสินค้า <span className="text-red-500">*</span>
                   </Label>
                   {loadingVariants ? (
                     <div className="text-sm text-gray-500 mt-2">กำลังโหลดรูปแบบสินค้า...</div>
                   ) : selectedProductVariants.length > 0 ? (
                     <>
-                      <Select
-                        value={formData.variant_id?.toString() || ''}
-                        onValueChange={(value: string) => {
-                          setFormData(prev => ({
-                            ...prev,
-                            variant_id: value === 'none' || !value ? null : Number(value),
-                          }));
-                        }}
-                      >
-                        <SelectTrigger id="variant" className="mt-1">
-                          <SelectValue placeholder="เลือกรูปแบบสินค้า (ไม่บังคับ)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">ไม่เลือกรูปแบบ</SelectItem>
-                          {selectedProductVariants.map((variant) => (
-                            <SelectItem key={variant.variant_id} value={variant.variant_id.toString()}>
-                              {variant.variant_name} {variant.sku && `(${variant.sku})`} - ฿{variant.price.toLocaleString()}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-gray-500 mt-1">หากสินค้ามีรูปแบบ ให้เลือกรูปแบบที่ต้องการ หากไม่มีสามารถข้ามขั้นตอนนี้ได้</p>
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {selectedProductVariants.map((variant: any) => {
+                          const isSelected = formData.variant_id === variant.variant_id;
+                          // Get attributes from variant if available
+                          const variantAttributes = variant.attributes || [];
+                          
+                          return (
+                            <button
+                              key={variant.variant_id}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  variant_id: variant.variant_id,
+                                }));
+                                setFormErrors(prev => ({ ...prev, variant_id: undefined }));
+                              }}
+                              className={`relative px-4 py-3 rounded-lg border-2 transition-all duration-200 text-left min-w-[200px] ${
+                                isSelected
+                                  ? 'border-pink-500 bg-pink-50 text-pink-700'
+                                  : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                              }`}
+                            >
+                              <div className="space-y-1">
+                                <div className="font-semibold text-sm">
+                                  {variant.sku || `Variant ${variant.variant_id}`}
+                                </div>
+                                {variantAttributes.length > 0 && (
+                                  <div className="text-xs text-gray-600 space-y-0.5">
+                                    {variantAttributes.map((attr: { attribute_name_th: string; attribute_value_th: string }, idx: number) => (
+                                      <div key={idx}>
+                                        {attr.attribute_name_th}: {attr.attribute_value_th}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="font-bold text-pink-600 mt-1">
+                                  ฿{variant.price.toLocaleString()}
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <div className="absolute -top-1 -right-1 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {formErrors.variant_id && (
+                        <p className="text-xs text-red-500 mt-2">{formErrors.variant_id}</p>
+                      )}
                     </>
                   ) : (
-                    <div className="text-sm text-gray-500 mt-2">สินค้านี้ไม่มีรูปแบบ</div>
+                    <div className="text-sm text-red-500 mt-2">สินค้านี้ไม่มีรูปแบบ กรุณาเพิ่มรูปแบบสินค้าก่อน</div>
                   )}
                 </div>
               )}
@@ -1533,12 +1570,30 @@ export default function InventoryPage() {
                     </p>
                   )}
                   <p><span className="font-medium">สินค้า:</span> {selectedProduct?.product_name_th || 'N/A'}</p>
-                  {formData.variant_id && (
-                    <p>
-                      <span className="font-medium">รูปแบบ:</span>{' '}
-                      {selectedProductVariants.find(v => v.variant_id === formData.variant_id)?.variant_name || 'N/A'}
-                    </p>
-                  )}
+                  {formData.variant_id && (() => {
+                    const selectedVariant = selectedProductVariants.find((v: any) => v.variant_id === formData.variant_id);
+                    if (!selectedVariant) return null;
+                    return (
+                      <div>
+                        <p>
+                          <span className="font-medium">รูปแบบ:</span>{' '}
+                          {selectedVariant.sku || `Variant ${selectedVariant.variant_id}`}
+                        </p>
+                        {selectedVariant.attributes && selectedVariant.attributes.length > 0 && (
+                          <div className="ml-4 mt-1 space-y-0.5">
+                            {selectedVariant.attributes.map((attr: { attribute_name_th: string; attribute_value_th: string }, idx: number) => (
+                              <p key={idx} className="text-xs">
+                                {attr.attribute_name_th}: {attr.attribute_value_th}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs mt-1">
+                          <span className="font-medium">ราคา:</span> ฿{selectedVariant.price.toLocaleString()}
+                        </p>
+                      </div>
+                    );
+                  })()}
                   <p><span className="font-medium">คลังสินค้า:</span> {selectedWarehouse?.warehousename || 'N/A'}</p>
                   <p><span className="font-medium">จำนวนสินค้า:</span> {formData.stock_quantity || 0}</p>
                   <p><span className="font-medium">จำนวนที่จอง:</span> {formData.reserved_quantity || 0}</p>

@@ -22,27 +22,49 @@ export async function GET(req: NextRequest) {
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
 
     // Using lowercase column names without underscores
+    const categoryId = searchParams.get('category_id');
+    
     let sql = `
       SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, pv.isactive as is_active,
              p.productnameth as product_name_th,
-             STRING_AGG(DISTINCT av.attributevalueth, ', ' ORDER BY av.attributevalueth) as attribute_value_th,
-             STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
-             STRING_AGG(DISTINCT a.attributenameth, ', ' ORDER BY a.attributenameth) as attribute_name_th,
-             STRING_AGG(DISTINCT a.attributenameen, ', ' ORDER BY a.attributenameen) as attribute_name_en
+             sc.subcategorynameth as sub_category_name_th,
+             sc.subcategorynameen as sub_category_name_en,
+             c.categoryid as category_id,
+             c.categorynameth as category_name_th,
+             c.categorynameen as category_name_en,
+             json_agg(
+               json_build_object(
+                 'attribute_name_th', a.attributenameth,
+                 'attribute_value_th', av.attributevalueth
+               ) ORDER BY a.attributenameth
+             ) FILTER (WHERE a.attributenameth IS NOT NULL) as attributes
       FROM productvariants pv
       LEFT JOIN products p ON p.productid = pv.productid
+      LEFT JOIN subcategories sc ON sc.subcategoryid = p.subcategoryid
+      LEFT JOIN categories c ON c.categoryid = sc.categoryid
       LEFT JOIN productvariantattributes pva ON pva.variantid = pv.variantid
       LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
       LEFT JOIN attributes a ON a.attributeid = av.attributeid
     `;
     
     const params: any[] = [];
+    const conditions: string[] = [];
+    
     if (productId) {
-      sql += ` WHERE pv.productid = $1`;
+      conditions.push(`pv.productid = $${params.length + 1}`);
       params.push(Number(productId));
     }
     
-    sql += ` GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.isactive, p.productnameth
+    if (categoryId && categoryId !== 'all') {
+      conditions.push(`c.categoryid = $${params.length + 1}`);
+      params.push(Number(categoryId));
+    }
+    
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    
+    sql += ` GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.isactive, p.productnameth, sc.subcategorynameth, sc.subcategorynameen, c.categoryid, c.categorynameth, c.categorynameen
              ORDER BY pv.variantid LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
@@ -55,17 +77,24 @@ export async function GET(req: NextRequest) {
       image_url?: string | null;
       is_active: boolean | null;
       product_name_th: string;
-      attribute_name_th: string | null;
-      attribute_value_th: string | null;
+      sub_category_name_th: string | null;
+      sub_category_name_en: string | null;
+      category_id: number | null;
+      category_name_th: string | null;
+      category_name_en: string | null;
+      attributes: Array<{ attribute_name_th: string; attribute_value_th: string }> | null;
     }>;
 
     const items = variants.map((v) => ({
       variant_id: v.variant_id,
       product_id: v.product_id,
       product_name_th: v.product_name_th,
-      attribute_label: v.attribute_name_th && v.attribute_value_th 
-        ? `${v.attribute_name_th}: ${v.attribute_value_th}` 
-        : null,
+      sub_category_name_th: v.sub_category_name_th,
+      sub_category_name_en: v.sub_category_name_en,
+      category_id: v.category_id,
+      category_name_th: v.category_name_th,
+      category_name_en: v.category_name_en,
+      attributes: v.attributes || [],
       sku: v.sku,
       price: Number(v.price),
       image_url: v.image_url ?? null,
