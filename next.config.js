@@ -17,7 +17,6 @@ if (process.env.NODE_ENV !== 'production') {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   output: 'standalone', // Enable standalone output for Docker
   
   // Performance optimizations for development
@@ -28,8 +27,8 @@ const nextConfig = {
       '@radix-ui/react-select',
       '@radix-ui/react-slot',
     ],
-    // Enable faster refresh
-    optimizeCss: true,
+    // CSS optimization disabled - critters package is deprecated
+    // optimizeCss: true,
   },
   
   // Compiler optimizations
