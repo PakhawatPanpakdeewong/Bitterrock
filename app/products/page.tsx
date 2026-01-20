@@ -186,7 +186,7 @@ export default function ProductsPage() {
         }
 
         const [imgRes, prodRes] = await Promise.all([
-          fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
+          fetch("/api/r2-objects?all=true", { cache: "no-store" }),
           fetch(productsUrl, { cache: "no-store" }),
         ]);
         const imgData = await imgRes.json();
@@ -455,7 +455,7 @@ export default function ProductsPage() {
       }
 
       const [imgRes, prodRes] = await Promise.all([
-        fetch("/api/r2-objects?limit=50", { cache: "no-store" }),
+        fetch("/api/r2-objects?all=true", { cache: "no-store" }),
         fetch(productsUrl, { cache: "no-store" }),
       ]);
       
@@ -626,6 +626,7 @@ export default function ProductsPage() {
         
         // Upload images if provided (use variant SKU with suffix -1, -2, -3, -4)
         if (uploadedImages.length > 0 && variantData.id) {
+          const uploadPromises = [];
           for (let i = 0; i < uploadedImages.length; i++) {
             const file = uploadedImages[i];
             const imageNumber = i + 1;
@@ -635,20 +636,29 @@ export default function ProductsPage() {
             formData.append('file', file);
             formData.append('newName', `${imageSku}.jpg`);
             
-            try {
-              const uploadRes = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData,
+            const uploadPromise = fetch('/api/upload', {
+              method: 'POST',
+              body: formData,
+            })
+              .then(async (uploadRes) => {
+                const uploadData = await uploadRes.json();
+                if (!uploadData.ok) {
+                  console.warn(`⚠️ Warning: Failed to upload image ${imageNumber}:`, uploadData.error);
+                  throw new Error(uploadData.error || `Failed to upload image ${imageNumber}`);
+                }
+                return uploadData;
+              })
+              .catch((uploadError) => {
+                console.warn(`⚠️ Warning: Failed to upload image ${imageNumber}:`, uploadError);
+                throw uploadError;
               });
-              
-              const uploadData = await uploadRes.json();
-              if (!uploadData.ok) {
-                console.warn(`⚠️ Warning: Failed to upload image ${imageNumber}:`, uploadData.error);
-              }
-            } catch (uploadError) {
-              console.warn(`⚠️ Warning: Failed to upload image ${imageNumber}:`, uploadError);
-            }
+            
+            uploadPromises.push(uploadPromise);
           }
+          
+          // Wait for all images to upload before proceeding
+          await Promise.all(uploadPromises);
+          console.log(`✅ Successfully uploaded ${uploadedImages.length} image(s) for SKU ${variantSku}`);
         }
       }
       
@@ -2164,6 +2174,7 @@ export default function ProductsPage() {
                         ? Math.max(...existingImageNumbers) + 1 
                         : 1;
                       
+                      const uploadPromises = [];
                       for (let i = 0; i < editNewImages.length; i++) {
                         const file = editNewImages[i];
                         const imageSku = `${baseSku}-${nextImageNumber}`;
@@ -2173,26 +2184,35 @@ export default function ProductsPage() {
                         formData.append('file', file);
                         formData.append('newName', `${imageSku}.jpg`);
                         
-                        try {
-                          const uploadRes = await fetch('/api/upload', {
-                            method: 'POST',
-                            body: formData,
+                        const uploadPromise = fetch('/api/upload', {
+                          method: 'POST',
+                          body: formData,
+                        })
+                          .then(async (uploadRes) => {
+                            const uploadData = await uploadRes.json();
+                            if (uploadData.ok) {
+                              console.log('✅ New image uploaded:', uploadData.filename);
+                              return uploadData;
+                            } else {
+                              console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
+                              throw new Error(uploadData.error || 'Failed to upload image');
+                            }
+                          })
+                          .catch((uploadError) => {
+                            console.warn('⚠️ Warning: Failed to upload image:', uploadError);
+                            throw uploadError;
                           });
-                          
-                          const uploadData = await uploadRes.json();
-                          if (uploadData.ok) {
-                            console.log('✅ New image uploaded:', uploadData.filename);
-                          } else {
-                            console.warn('⚠️ Warning: Failed to upload image:', uploadData.error);
-                          }
-                        } catch (uploadError) {
-                          console.warn('⚠️ Warning: Failed to upload image:', uploadError);
-                        }
+                        
+                        uploadPromises.push(uploadPromise);
                       }
+                      
+                      // Wait for all images to upload before refreshing
+                      await Promise.all(uploadPromises);
+                      console.log(`✅ Successfully uploaded ${editNewImages.length} image(s) for SKU ${baseSku}`);
                       
                       // Refresh images list after successful upload
                       try {
-                        const imgRes = await fetch("/api/r2-objects?limit=50", { cache: "no-store" });
+                        const imgRes = await fetch("/api/r2-objects?all=true", { cache: "no-store" });
                         const imgData = await imgRes.json();
                         if (imgData.ok) {
                           setImages(imgData.items || []);
