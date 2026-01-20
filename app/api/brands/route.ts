@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     // Handle unique constraint violation
     if (error.code === '23505') {
       return NextResponse.json(
-        { success: false, error: 'Brand name or code already exists' },
+        { success: false, error: 'Brand name or code already exists in this subcategory' },
         { status: 400 }
       );
     }
@@ -216,7 +216,7 @@ export async function PUT(request: NextRequest) {
     // Handle unique constraint violation
     if (error.code === '23505') {
       return NextResponse.json(
-        { success: false, error: 'Brand name or code already exists' },
+        { success: false, error: 'Brand name or code already exists in this subcategory' },
         { status: 400 }
       );
     }

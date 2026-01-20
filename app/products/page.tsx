@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { ResponsiveImage } from "@/components/ui/responsive-image";
-import { Grid, List, RefreshCw, Search, Plus, Pencil, Upload } from "lucide-react";
+import { Grid, List, RefreshCw, Search, Plus, Pencil, Upload, ArrowUpDown, FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+import * as XLSX from "xlsx";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
 type Variant = {
@@ -40,6 +41,7 @@ type Product = {
   product_name_th: string;
   product_name_en: string;
   description: string | null;
+  created_date?: string | null;
   variants: Variant[];
 };
 
@@ -159,6 +161,10 @@ export default function ProductsPage() {
   const [filterSubCategoryId, setFilterSubCategoryId] = useState<string>("all");
   const [filterSubCategories, setFilterSubCategories] = useState<UiSubCategory[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortOrder, setSortOrder] = useState<string>("none"); // "none", "name_asc", "name_desc", "price_asc", "price_desc"
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 30;
 
   useEffect(() => {
     let isMounted = true;
@@ -171,7 +177,7 @@ export default function ProductsPage() {
           setCategories(catsJson.data);
         }
 
-        let productsUrl = '/api/products?limit=30';
+        let productsUrl = '/api/products?limit=1000';
         if (filterCategoryId && filterCategoryId !== 'all') {
           productsUrl += `&category_id=${encodeURIComponent(filterCategoryId)}`;
         }
@@ -440,7 +446,7 @@ export default function ProductsPage() {
       setBusy(true);
       setError(null);
       
-      let productsUrl = '/api/products?limit=30';
+      let productsUrl = '/api/products?limit=1000';
       if (filterCategoryId && filterCategoryId !== 'all') {
         productsUrl += `&category_id=${encodeURIComponent(filterCategoryId)}`;
       }
@@ -461,6 +467,8 @@ export default function ProductsPage() {
       
       setImages(imgData.items || []);
       setServerProducts(prodData.items || []);
+      // Reset to page 1 when products are refetched
+      setCurrentPage(1);
     } catch (e: any) {
       setError(e?.message || "Failed to refresh data");
     } finally {
@@ -1007,7 +1015,12 @@ export default function ProductsPage() {
       const matchesSearch = 
         product.product_name_th?.toLowerCase().includes(query) ||
         product.product_name_en?.toLowerCase().includes(query) ||
-        product.variants?.some(v => v.sku?.toLowerCase().includes(query));
+        // Search by SKU (case-insensitive, partial match)
+        product.variants?.some(v => v.sku?.toLowerCase().includes(query)) ||
+        // Also search in brand name and code
+        product.brand_name_th?.toLowerCase().includes(query) ||
+        product.brand_name_en?.toLowerCase().includes(query) ||
+        product.brand_code?.toLowerCase().includes(query);
       if (!matchesSearch) return false;
     }
     
@@ -1028,7 +1041,7 @@ export default function ProductsPage() {
 
   // Expand products to show each variant separately for display
   type ProductWithDisplayVariant = Product & { displayVariant: Variant | null };
-  const expandedProductsForDisplay: ProductWithDisplayVariant[] = filteredProducts.flatMap((product): ProductWithDisplayVariant[] => {
+  let expandedProductsForDisplay: ProductWithDisplayVariant[] = filteredProducts.flatMap((product): ProductWithDisplayVariant[] => {
     if (!product.variants || product.variants.length === 0) {
       return [{ ...product, displayVariant: null }];
     }
@@ -1038,6 +1051,244 @@ export default function ProductsPage() {
       displayVariant: variant,
     }));
   });
+
+  // Sort products based on sort order
+  if (sortOrder !== 'none') {
+    expandedProductsForDisplay = [...expandedProductsForDisplay].sort((a, b) => {
+      if (sortOrder === 'name_asc') {
+        const nameA = (a.product_name_th || a.product_name || '').toLowerCase();
+        const nameB = (b.product_name_th || b.product_name || '').toLowerCase();
+        return nameA.localeCompare(nameB, 'th');
+      } else if (sortOrder === 'name_desc') {
+        const nameA = (a.product_name_th || a.product_name || '').toLowerCase();
+        const nameB = (b.product_name_th || b.product_name || '').toLowerCase();
+        return nameB.localeCompare(nameA, 'th');
+      } else if (sortOrder === 'price_asc') {
+        const priceA = a.displayVariant?.price || a.variants?.[0]?.price || 0;
+        const priceB = b.displayVariant?.price || b.variants?.[0]?.price || 0;
+        return priceA - priceB;
+      } else if (sortOrder === 'price_desc') {
+        const priceA = a.displayVariant?.price || a.variants?.[0]?.price || 0;
+        const priceB = b.displayVariant?.price || b.variants?.[0]?.price || 0;
+        return priceB - priceA;
+      } else if (sortOrder === 'date_asc') {
+        const dateA = a.created_date ? new Date(a.created_date).getTime() : 0;
+        const dateB = b.created_date ? new Date(b.created_date).getTime() : 0;
+        return dateA - dateB;
+      } else if (sortOrder === 'date_desc') {
+        const dateA = a.created_date ? new Date(a.created_date).getTime() : 0;
+        const dateB = b.created_date ? new Date(b.created_date).getTime() : 0;
+        return dateB - dateA;
+      }
+      return 0;
+    });
+  }
+
+  // Pagination calculation
+  const totalItems = expandedProductsForDisplay.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedProducts = expandedProductsForDisplay.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterSubCategoryId, sortOrder]);
+
+  // Reset to page 1 if currentPage exceeds totalPages (e.g., after deleting items or filtering)
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+
+  // Format date helper
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('th-TH', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Format currency helper
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('th-TH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value);
+  };
+
+  // Export to Excel
+  const exportToExcel = () => {
+    // Prepare data for export
+    const exportData = expandedProductsForDisplay.map((product) => {
+      const variant = product.displayVariant || product.variants?.[0];
+      
+      return {
+        'รหัสสินค้า': product.id,
+        'ชื่อสินค้า (ไทย)': product.product_name_th || '',
+        'ชื่อสินค้า (อังกฤษ)': product.product_name_en || '',
+        'SKU': variant?.sku || '',
+        'หมวดหมู่': product.sub_categories_name || '',
+        'แบรนด์': product.brand_name_th ? `${product.brand_name_th} (${product.brand_name_en})` : 'Non-Brand',
+        'ราคา': variant?.price ? variant.price : '',
+        'สถานะการใช้งาน': variant?.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน',
+        'วันที่สร้าง': product.created_date ? formatDate(product.created_date) : '',
+        'รายละเอียด': product.description || '',
+      };
+    });
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // Set column widths
+    const colWidths = [
+      { wch: 12 }, // รหัสสินค้า
+      { wch: 30 }, // ชื่อสินค้า (ไทย)
+      { wch: 30 }, // ชื่อสินค้า (อังกฤษ)
+      { wch: 20 }, // SKU
+      { wch: 20 }, // หมวดหมู่
+      { wch: 25 }, // แบรนด์
+      { wch: 12 }, // ราคา
+      { wch: 18 }, // สถานะการใช้งาน
+      { wch: 20 }, // วันที่สร้าง
+      { wch: 40 }, // รายละเอียด
+    ];
+    ws['!cols'] = colWidths;
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'สินค้า');
+
+    // Generate filename with current date
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `สินค้า_${dateStr}.xlsx`;
+
+    // Save file
+    XLSX.writeFile(wb, filename);
+  };
+
+  // Export to PDF
+  const exportToPDF = async () => {
+    try {
+      // Dynamically import libraries
+      const [{ default: jsPDF }, html2canvas] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas')
+      ]);
+      
+      // Create temporary table element
+      const tableHtml = `
+        <div style="padding: 20px; font-family: 'Sarabun', 'Arial', sans-serif; background: white;">
+          <h1 style="font-size: 24px; margin-bottom: 10px; text-align: center;">รายงานสินค้า</h1>
+          <p style="font-size: 12px; margin-bottom: 5px;">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</p>
+          <p style="font-size: 12px; margin-bottom: 20px;">จำนวนรายการ: ${expandedProductsForDisplay.length} รายการ</p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 9px;">
+            <thead>
+              <tr style="background-color: #3b82f6; color: white;">
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">รหัส</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">ชื่อสินค้า</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">SKU</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">หมวดหมู่</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">แบรนด์</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: right;">ราคา</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: center;">สถานะ</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">วันที่สร้าง</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${expandedProductsForDisplay.map((product, index) => {
+                const variant = product.displayVariant || product.variants?.[0];
+                
+                return `
+                <tr style="background-color: ${index % 2 === 0 ? '#f5f7fa' : 'white'};">
+                  <td style="border: 1px solid #ddd; padding: 5px;">${product.id}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px;">${product.product_name_th || ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px;">${variant?.sku || ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px;">${product.sub_categories_name || ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px;">${product.brand_name_th ? `${product.brand_name_th} (${product.brand_name_en})` : 'Non-Brand'}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px; text-align: right;">${variant?.price ? `฿${formatCurrency(variant.price)}` : ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px; text-align: center;">${variant?.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน'}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px;">${product.created_date ? formatDate(product.created_date) : 'N/A'}</td>
+                </tr>
+              `;
+              }).join('')}
+            </tbody>
+          </table>
+          <div style="margin-top: 20px; font-size: 12px;">
+            <p><strong>จำนวนสินค้าทั้งหมด:</strong> ${expandedProductsForDisplay.length} รายการ</p>
+            <p><strong>จำนวนสินค้าที่เปิดการขาย:</strong> ${expandedProductsForDisplay.filter(p => (p.displayVariant || p.variants?.[0])?.is_active === true).length} รายการ</p>
+            <p><strong>จำนวนสินค้าที่ไม่พร้อมใช้งาน:</strong> ${expandedProductsForDisplay.filter(p => (p.displayVariant || p.variants?.[0])?.is_active !== true).length} รายการ</p>
+          </div>
+        </div>
+      `;
+
+      // Create temporary div element
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = tableHtml;
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.style.width = '1200px';
+      document.body.appendChild(tempDiv);
+
+      // Convert to canvas
+      const canvas = await html2canvas.default(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      // Remove temporary div
+      document.body.removeChild(tempDiv);
+
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      const imgWidth = 297; // A4 landscape width in mm
+      const pageHeight = 210; // A4 landscape height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Add additional pages if needed
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      // Generate filename with current date
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `สินค้า_${dateStr}.pdf`;
+
+      // Save file
+      pdf.save(filename);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('เกิดข้อผิดพลาดในการส่งออก PDF: ' + (error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'));
+    }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -1089,6 +1340,27 @@ export default function ProductsPage() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
           </Button>
+          {/* Export Buttons */}
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={exportToExcel}
+            className="h-8 flex items-center gap-1.5 text-xs px-2"
+            title="ส่งออกเป็น Excel"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">ส่งออก Excel</span>
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={exportToPDF}
+            className="h-8 flex items-center gap-1.5 text-xs px-2"
+            title="ส่งออกเป็น PDF"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">ส่งออก PDF</span>
+          </Button>
           {/* Edit Mode Button */}
           <Button 
             variant="outline" 
@@ -1121,7 +1393,7 @@ export default function ProductsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <Input
               type="text"
-              placeholder="ค้นหาชื่อสินค้า"
+              placeholder="ค้นหาชื่อสินค้า หรือ SKU"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 h-8 w-64 text-xs"
@@ -1143,21 +1415,40 @@ export default function ProductsPage() {
             </SelectContent>
           </Select>
           {/* Subcategory Dropdown */}
-          {filterCategoryId && filterCategoryId !== 'all' && filterSubCategories.length > 0 && (
-            <Select value={filterSubCategoryId} onValueChange={(val: string) => { setFilterSubCategoryId(val); }}>
-              <SelectTrigger className="h-8 min-w-[200px] w-auto border-gray-300 whitespace-nowrap text-xs">
-                <SelectValue placeholder="ทุกหมวดหมู่ย่อย" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">ทุกหมวดหมู่ย่อย</SelectItem>
-                {filterSubCategories.map((sc) => (
-                  <SelectItem key={sc.sub_category_id} value={String(sc.sub_category_id)}>
-                    {sc.sub_category_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <Select 
+            value={filterSubCategoryId} 
+            onValueChange={(val: string) => { setFilterSubCategoryId(val); }}
+            disabled={!filterCategoryId || filterCategoryId === 'all' || filterSubCategories.length === 0}
+          >
+            <SelectTrigger className={`h-8 min-w-[200px] w-auto border-gray-300 whitespace-nowrap text-xs ${
+              (!filterCategoryId || filterCategoryId === 'all' || filterSubCategories.length === 0) ? 'opacity-50 cursor-not-allowed' : ''
+            }`}>
+              <SelectValue placeholder="ทุกหมวดหมู่ย่อย" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ทุกหมวดหมู่ย่อย</SelectItem>
+              {filterSubCategories.map((sc) => (
+                <SelectItem key={sc.sub_category_id} value={String(sc.sub_category_id)}>
+                  {sc.sub_category_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Sort Dropdown */}
+          <Select value={sortOrder} onValueChange={(val: string) => { setSortOrder(val); }}>
+            <SelectTrigger className="h-8 min-w-[180px] w-auto border-gray-300 whitespace-nowrap text-xs">
+              <SelectValue placeholder="เรียงลำดับ" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">ไม่เรียงลำดับ</SelectItem>
+              <SelectItem value="name_asc">ชื่อสินค้า (ก-ฮ)</SelectItem>
+              <SelectItem value="name_desc">ชื่อสินค้า (ฮ-ก)</SelectItem>
+              <SelectItem value="price_asc">ราคา (ต่ำ-สูง)</SelectItem>
+              <SelectItem value="price_desc">ราคา (สูง-ต่ำ)</SelectItem>
+              <SelectItem value="date_asc">วันที่สร้าง (เก่า-ใหม่)</SelectItem>
+              <SelectItem value="date_desc">วันที่สร้าง (ใหม่-เก่า)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -1173,7 +1464,7 @@ export default function ProductsPage() {
         // Picture View - Grid of images only
         <>
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
-          {expandedProductsForDisplay.map((product, index) => {
+          {paginatedProducts.map((product, index) => {
             // Use displayVariant if available, otherwise fallback to first variant
             const displayVariant = product.displayVariant || product.variants?.[0];
             const skuImage = displayVariant?.sku ? findImageBySku(displayVariant.sku) : null;
@@ -1205,56 +1496,192 @@ export default function ProductsPage() {
             );
           })}
         </div>
+        {/* Pagination for Picture View */}
+        {totalItems > 0 && (
+          <div className="flex items-center justify-center gap-2 mt-6 mb-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="h-8 w-8 p-0"
+            >
+              &lt;&lt;
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            {Array.from({ length: Math.min(10, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 10) {
+                pageNum = i + 1;
+              } else if (currentPage <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 4) {
+                pageNum = totalPages - 9 + i;
+              } else {
+                pageNum = currentPage - 4 + i;
+              }
+              return (
+                <Button
+                  key={pageNum}
+                  variant={currentPage === pageNum ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`h-8 w-8 p-0 ${currentPage === pageNum ? 'bg-blue-500 hover:bg-blue-600' : ''}`}
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="h-8 w-8 p-0"
+            >
+              &gt;&gt;
+            </Button>
+            <span className="text-sm text-gray-600 ml-2">
+              หน้า {currentPage} จาก {totalPages} (ทั้งหมด {totalItems} รายการ)
+            </span>
+          </div>
+        )}
         </>
       ) : viewMode === 'card' ? (
         // Card View - Detailed cards
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
-          {expandedProductsForDisplay.map((product, index) => {
-            // Use displayVariant if available, otherwise fallback to first variant
-            const displayVariant = product.displayVariant || product.variants?.[0];
-            const skuImage = displayVariant?.sku ? findImageBySku(displayVariant.sku) : null;
-            const variantImage = displayVariant?.image_url;
-            const productImage = skuImage || variantImage;
-            
-            return (
-              <Card 
-                key={`${product.id}-${displayVariant?.variant_id || index}`} 
-                className="overflow-hidden hover:shadow-lg transition-shadow duration-200 cursor-pointer"
-                onClick={() => isEditMode ? openEdit(product) : openDetail(product, product.displayVariant)}
-              >
-                <CardContent className="p-0">
-                  <div className="flex flex-col h-full">
-                    {/* Product Image */}
-                    <ResponsiveImage
-                      src={productImage || ''}
-                      alt={product.product_name}
-                      aspectRatio="square"
-                      objectFit="contain"
-                      hoverEffect={true}
-                    />
-                    
-                    {/* Product Info */}
-                    <div className="p-4 space-y-2 flex-1 flex flex-col">
-                      <h2 className="text-base font-semibold line-clamp-2">{product.product_name_th || product.product_name}</h2>
-                      <div className="flex flex-col gap-1 text-sm text-gray-700">
-                        {displayVariant?.sku && (
-                          <span className="truncate">SKU: <span className="font-medium">{displayVariant.sku}</span></span>
-                        )}
-                        {displayVariant && (
-                          <span className="text-gray-600">
-                            ราคา: <span className="font-bold text-blue-600">
-                              {displayVariant.price.toFixed(2)} ฿
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
+            {paginatedProducts.map((product, index) => {
+              // Use displayVariant if available, otherwise fallback to first variant
+              const displayVariant = product.displayVariant || product.variants?.[0];
+              const skuImage = displayVariant?.sku ? findImageBySku(displayVariant.sku) : null;
+              const variantImage = displayVariant?.image_url;
+              const productImage = skuImage || variantImage;
+              
+              return (
+                <Card 
+                  key={`${product.id}-${displayVariant?.variant_id || index}`} 
+                  className="overflow-hidden hover:shadow-lg transition-shadow duration-200 cursor-pointer"
+                  onClick={() => isEditMode ? openEdit(product) : openDetail(product, product.displayVariant)}
+                >
+                  <CardContent className="p-0">
+                    <div className="flex flex-col h-full">
+                      {/* Product Image */}
+                      <ResponsiveImage
+                        src={productImage || ''}
+                        alt={product.product_name}
+                        aspectRatio="square"
+                        objectFit="contain"
+                        hoverEffect={true}
+                      />
+                      
+                      {/* Product Info */}
+                      <div className="p-4 space-y-2 flex-1 flex flex-col">
+                        <h2 className="text-base font-semibold line-clamp-2">{product.product_name_th || product.product_name}</h2>
+                        <div className="flex flex-col gap-1 text-sm text-gray-700">
+                          {displayVariant?.sku && (
+                            <span className="truncate">SKU: <span className="font-medium">{displayVariant.sku}</span></span>
+                          )}
+                          {displayVariant && (
+                            <span className="text-gray-600">
+                              ราคา: <span className="font-bold text-blue-600">
+                                {displayVariant.price.toFixed(2)} ฿
+                              </span>
                             </span>
-                          </span>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {/* Pagination for Card View */}
+          {totalItems > 0 && (
+          <div className="flex items-center justify-center gap-2 mt-6 mb-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="h-8 w-8 p-0"
+            >
+              &lt;&lt;
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            {Array.from({ length: Math.min(10, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 10) {
+                pageNum = i + 1;
+              } else if (currentPage <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 4) {
+                pageNum = totalPages - 9 + i;
+              } else {
+                pageNum = currentPage - 4 + i;
+              }
+              return (
+                <Button
+                  key={pageNum}
+                  variant={currentPage === pageNum ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`h-8 w-8 p-0 ${currentPage === pageNum ? 'bg-blue-500 hover:bg-blue-600' : ''}`}
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="h-8 w-8 p-0"
+            >
+              &gt;&gt;
+            </Button>
+            <span className="text-sm text-gray-600 ml-2">
+              หน้า {currentPage} จาก {totalPages} (ทั้งหมด {totalItems} รายการ)
+            </span>
+          </div>
+          )}
+        </>
       ) : viewMode === 'variants' ? (
         // Variants Table View
         <Card>

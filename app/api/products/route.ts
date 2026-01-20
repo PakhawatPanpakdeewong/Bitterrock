@@ -13,6 +13,7 @@ type DbProduct = {
   brand_name_th: string | null;
   brand_name_en: string | null;
   brand_code: string | null;
+  created_date: string | null;
 };
 
 type DbVariant = {
@@ -35,7 +36,7 @@ export const revalidate = 60; // Revalidate every 60 seconds
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 30)));
+    const limit = Math.min(10000, Math.max(1, Number(searchParams.get('limit') || 1000)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
     const categoryIdParam = searchParams.get('category_id');
     const subCategoryIdParam = searchParams.get('sub_category_id');
@@ -64,6 +65,7 @@ export async function GET(req: NextRequest) {
     p.productnameth as product_name_th,
     p.productnameen as product_name_en,
     p.description,
+    p.createddate as created_date,
     sc.subcategorynameth as sub_category_name,
     b.brandnameth as brand_name_th,
     b.brandnameen as brand_name_en,
@@ -135,6 +137,7 @@ export async function GET(req: NextRequest) {
       product_name_th: p.product_name_th,
       product_name_en: p.product_name_en,
       description: p.description,
+      created_date: p.created_date,
       variants: (productIdToVariants[p.product_id] || []).map((v) => ({
         variant_id: v.variant_id,
         variant_name: v.attribute_name_th && v.attribute_value_th 

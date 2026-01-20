@@ -69,10 +69,13 @@ CREATE TABLE IF NOT EXISTS SubCategories (
 CREATE TABLE IF NOT EXISTS Brands (
     BrandID SERIAL PRIMARY KEY,
     SubCategoryID INTEGER REFERENCES SubCategories(SubCategoryID) ON DELETE CASCADE,
-    BrandNameTH VARCHAR(255) NOT NULL UNIQUE,
-    BrandNameEN VARCHAR(255) NOT NULL UNIQUE,
-    BrandCode VARCHAR(255) NOT NULL UNIQUE,
-    UNIQUE(BrandCode)
+    BrandNameTH VARCHAR(255) NOT NULL,
+    BrandNameEN VARCHAR(255) NOT NULL,
+    BrandCode VARCHAR(255) NOT NULL,
+    -- Allow same brand name/code in different subcategories
+    UNIQUE(SubCategoryID, BrandNameTH),
+    UNIQUE(SubCategoryID, BrandNameEN),
+    UNIQUE(SubCategoryID, BrandCode)
 );
 
 -- Products table
@@ -288,7 +291,6 @@ CREATE TABLE IF NOT EXISTS SearchHistory (
 CREATE TABLE IF NOT EXISTS SearchResults (
     SearchResultID SERIAL PRIMARY KEY,
     SearchHistoryID INTEGER REFERENCES SearchHistory(SearchHistoryID) ON DELETE CASCADE,
-    ProductID INTEGER REFERENCES Products(ProductID) ON DELETE CASCADE,
     VariantID INTEGER REFERENCES ProductVariants(VariantID) ON DELETE CASCADE,
     ResultRank INTEGER NOT NULL CHECK (ResultRank > 0),
     IsClicked BOOLEAN DEFAULT false,
