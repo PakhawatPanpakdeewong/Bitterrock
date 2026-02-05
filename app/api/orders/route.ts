@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
         END as delivery_status
       FROM orders o
       JOIN customers c ON c.customerid = o.customerid
-      LEFT JOIN orderitems oi ON oi.orderid = o.orderid
+      LEFT JOIN order_items oi ON oi.orderid = o.orderid
       ${whereSql}
       GROUP BY o.orderid, o.customerid, o.orderdate, o.totalamount, o.orderstatus, 
                o.shippingaddress, o.notes, o.createddate, o.updateddate,
@@ -165,6 +165,12 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
+
+
+
+
+
+
 
 
 

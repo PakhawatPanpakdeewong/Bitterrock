@@ -367,7 +367,7 @@ export default function WarehouseStockPage() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">จัดการคลังสินค้า</h1>
+              <h1 className="text-xl font-bold text-gray-900">จัดการที่จัดเก็บสินค้า (คลังสินค้า)</h1>
               <p className="text-xs text-gray-600 mt-1">จัดการคลังสินค้าและข้อมูลการจัดเก็บ</p>
             </div>
             <div className="flex items-center gap-2">

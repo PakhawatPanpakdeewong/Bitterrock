@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/components/utils/cn';
 import { useSidebar } from './sidebar-context';
 
@@ -57,6 +57,16 @@ const menuGroups: MenuGroup[] = [
       )},
     ],
   },
+  {
+    title: 'Settings',
+    items: [
+      { name: 'จัดการสิทธิ์การเข้าถึง', href: '/user-permissions', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      )},
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -65,6 +75,22 @@ export function Sidebar() {
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (data.ok && data.user) {
+          setUserRole(data.user.StaffRole?.toLowerCase() || null);
+        }
+      } catch (error) {
+        console.error('Error fetching user role:', error);
+      }
+    };
+    fetchUserRole();
+  }, []);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -151,17 +177,32 @@ export function Sidebar() {
 
       {/* Menu Items */}
       <div className="overflow-y-auto h-[calc(100vh-8rem)] py-4">
-        {menuGroups.map((group) => (
-          <div key={group.title} className="mb-6">
-            {!isCollapsed && (
-              <div className="px-4 mb-2">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {group.title}
-                </h3>
-              </div>
-            )}
-            <div className="space-y-1">
-              {group.items.map((item) => {
+        {menuGroups.map((group) => {
+          // Filter menu items based on user role
+          const filteredItems = group.items.filter((item) => {
+            // Hide "จัดการสิทธิ์การเข้าถึง" for staff
+            if ('href' in item && item.href === '/user-permissions') {
+              return userRole !== 'staff';
+            }
+            return true;
+          });
+
+          // Don't render the group if no items remain
+          if (filteredItems.length === 0) {
+            return null;
+          }
+
+          return (
+            <div key={group.title} className="mb-6">
+              {!isCollapsed && (
+                <div className="px-4 mb-2">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {group.title}
+                  </h3>
+                </div>
+              )}
+              <div className="space-y-1">
+                {filteredItems.map((item) => {
                 if ('children' in item) {
                   // Menu item with children (collapsible)
                   const isExpanded = expandedItems.has(item.name);
@@ -247,9 +288,10 @@ export function Sidebar() {
                   );
                 }
               })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Logout Button */}

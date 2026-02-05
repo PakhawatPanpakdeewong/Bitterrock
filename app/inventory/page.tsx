@@ -59,6 +59,7 @@ type InventoryItem = {
 
 type Product = {
   id: number;
+  brand_id: number | null;
   sub_categories_name: string | null;
   product_name_th: string;
   product_name_en: string;
@@ -94,9 +95,18 @@ type SubCategory = {
   category_id: number;
 };
 
+type Brand = {
+  brand_id: number;
+  brand_name_th: string;
+  brand_name_en: string;
+  brand_code: string | null;
+  sub_category_id: number | null;
+};
+
 type InventoryFormData = {
   category_id: number | null;
   sub_category_id: number | null;
+  brand_id: number | null;
   product_id: number | null;
   variant_id: number | null;
   warehouse_id: number | null;
@@ -111,6 +121,7 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedWarehouse, setSelectedWarehouse] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
@@ -119,11 +130,13 @@ export default function InventoryPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedProductVariants, setSelectedProductVariants] = useState<Product['variants']>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [loadingSubCategories, setLoadingSubCategories] = useState(false);
+  const [loadingBrands, setLoadingBrands] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [loadingWarehouses, setLoadingWarehouses] = useState(false);
   const [loadingVariants, setLoadingVariants] = useState(false);
@@ -131,6 +144,7 @@ export default function InventoryPage() {
   const [formData, setFormData] = useState<InventoryFormData>({
     category_id: null,
     sub_category_id: null,
+    brand_id: null,
     product_id: null,
     variant_id: null,
     warehouse_id: null,
@@ -182,13 +196,26 @@ export default function InventoryPage() {
       fetchSubCategories(formData.category_id);
     } else {
       setSubCategories([]);
-      setFormData(prev => ({ ...prev, sub_category_id: null, product_id: null, variant_id: null }));
+      setFormData(prev => ({ ...prev, sub_category_id: null, brand_id: null, product_id: null, variant_id: null }));
+      setBrands([]);
       setProducts([]);
       setSelectedProductVariants([]);
     }
   }, [formData.category_id, isAddModalOpen]);
 
-  // Fetch products when subcategory is selected
+  // Fetch brands when subcategory is selected
+  useEffect(() => {
+    if (formData.sub_category_id && isAddModalOpen) {
+      fetchBrands(formData.sub_category_id);
+    } else {
+      setBrands([]);
+      setFormData(prev => ({ ...prev, brand_id: null, product_id: null, variant_id: null }));
+      setProducts([]);
+      setSelectedProductVariants([]);
+    }
+  }, [formData.sub_category_id, isAddModalOpen]);
+
+  // Fetch products when subcategory or brand is selected
   useEffect(() => {
     if (formData.sub_category_id && isAddModalOpen) {
       fetchProducts(formData.category_id);
@@ -197,7 +224,7 @@ export default function InventoryPage() {
       setFormData(prev => ({ ...prev, product_id: null, variant_id: null }));
       setSelectedProductVariants([]);
     }
-  }, [formData.sub_category_id, formData.category_id, isAddModalOpen]);
+  }, [formData.sub_category_id, formData.brand_id, formData.category_id, isAddModalOpen]);
 
   // Fetch variants when product is selected
   useEffect(() => {
@@ -261,6 +288,22 @@ export default function InventoryPage() {
     }
   };
 
+  const fetchBrands = async (subCategoryId: number) => {
+    try {
+      setLoadingBrands(true);
+      const res = await fetch(`/api/brands?subcategory_id=${subCategoryId}`);
+      const data = await res.json();
+      if (data.success) {
+        setBrands(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching brands:', error);
+      setBrands([]);
+    } finally {
+      setLoadingBrands(false);
+    }
+  };
+
   const fetchProducts = async (categoryId: number | null) => {
     try {
       setLoadingProducts(true);
@@ -280,6 +323,13 @@ export default function InventoryPage() {
               return p.sub_categories_name === selectedSubCategory.sub_category_name_th;
             });
           }
+        }
+        // Filter by brand if selected
+        if (formData.brand_id) {
+          filteredProducts = filteredProducts.filter((p: Product) => {
+            // Match by brand_id
+            return p.brand_id === formData.brand_id;
+          });
         }
         setProducts(filteredProducts);
       }
@@ -327,6 +377,7 @@ export default function InventoryPage() {
     setFormData({
       category_id: null,
       sub_category_id: null,
+      brand_id: null,
       product_id: null,
       variant_id: null,
       warehouse_id: null,
@@ -343,6 +394,7 @@ export default function InventoryPage() {
     setFormData({
       category_id: null,
       sub_category_id: null,
+      brand_id: null,
       product_id: null,
       variant_id: null,
       warehouse_id: null,
@@ -353,6 +405,7 @@ export default function InventoryPage() {
     setFormErrors({});
     setSelectedProductVariants([]);
     setSubCategories([]);
+    setBrands([]);
     setProducts([]);
   };
 
@@ -438,7 +491,7 @@ export default function InventoryPage() {
   };
 
   const selectedProduct = products.find(p => p.id === formData.product_id);
-  const selectedWarehouse = warehouses.find(w => w.warehouseid === formData.warehouse_id);
+  const selectedWarehouseForForm = warehouses.find(w => w.warehouseid === formData.warehouse_id);
 
   const handleDeleteClick = (item: InventoryItem) => {
     // Check if item is active (not "ไม่พร้อมใช้งาน")
@@ -758,6 +811,7 @@ export default function InventoryPage() {
       item.product_name_en.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.variant_sku && item.variant_sku.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesCategory = selectedCategory === 'all' || (item.sub_category_name && item.sub_category_name === selectedCategory);
+    const matchesWarehouse = selectedWarehouse === 'all' || (item.warehouse_name && item.warehouse_name === selectedWarehouse);
     let matchesStatus = true;
     if (selectedStatus === 'in_stock') {
       matchesStatus = item.available_quantity > 10;
@@ -766,7 +820,7 @@ export default function InventoryPage() {
     } else if (selectedStatus === 'out_of_stock') {
       matchesStatus = item.available_quantity === 0;
     }
-    return matchesSearch && matchesCategory && matchesStatus;
+    return matchesSearch && matchesCategory && matchesWarehouse && matchesStatus;
   });
 
   // Pagination
@@ -777,6 +831,9 @@ export default function InventoryPage() {
 
   // Get unique categories for filtering
   const filterCategories = Array.from(new Set(inventoryItems.map(item => item.sub_category_name).filter(Boolean) as string[]));
+  
+  // Get unique warehouses for filtering
+  const filterWarehouses = Array.from(new Set(inventoryItems.map(item => item.warehouse_name).filter(Boolean) as string[]));
 
   const getStatusBadge = (availableQuantity: number) => {
     if (availableQuantity === 0) {
@@ -1003,6 +1060,20 @@ export default function InventoryPage() {
                   <SelectItem value="in_stock">มีสินค้า</SelectItem>
                   <SelectItem value="low_stock">สต็อกต่ำ</SelectItem>
                   <SelectItem value="out_of_stock">ขาดสต็อก</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={selectedWarehouse} onValueChange={(value: string) => {
+                setSelectedWarehouse(value);
+                setCurrentPage(1);
+              }}>
+                <SelectTrigger className="h-9 w-[180px] text-xs">
+                  <SelectValue placeholder="ทุกคลังสินค้า" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกคลังสินค้า</SelectItem>
+                  {filterWarehouses.map((warehouse) => (
+                    <SelectItem key={warehouse} value={warehouse}>{warehouse}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" className="h-9 px-3 whitespace-nowrap">
@@ -1237,6 +1308,7 @@ export default function InventoryPage() {
                         ...prev,
                         category_id: value ? Number(value) : null,
                         sub_category_id: null,
+                        brand_id: null,
                         product_id: null,
                         variant_id: null,
                       }));
@@ -1275,6 +1347,7 @@ export default function InventoryPage() {
                         setFormData(prev => ({
                           ...prev,
                           sub_category_id: value ? Number(value) : null,
+                          brand_id: null,
                           product_id: null,
                           variant_id: null,
                         }));
@@ -1296,6 +1369,46 @@ export default function InventoryPage() {
                   {formErrors.sub_category_id && (
                     <p className="text-xs text-red-500 mt-1">{formErrors.sub_category_id}</p>
                   )}
+                </div>
+              )}
+
+              {/* Brand Selection (Optional - for filtering) */}
+              {formData.sub_category_id && (
+                <div>
+                  <Label htmlFor="brand" className="text-sm font-medium">
+                    เลือกแบรนด์ (กรองสินค้า)
+                  </Label>
+                  {loadingBrands ? (
+                    <div className="text-sm text-gray-500 mt-2">กำลังโหลดแบรนด์...</div>
+                  ) : brands.length === 0 ? (
+                    <div className="text-sm text-gray-500 mt-2">ไม่พบแบรนด์ในหมวดย่อยนี้</div>
+                  ) : (
+                    <Select
+                      value={formData.brand_id?.toString() || 'all'}
+                      onValueChange={(value: string) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          brand_id: value === 'all' ? null : (value ? Number(value) : null),
+                          product_id: null,
+                          variant_id: null,
+                        }));
+                        setFormErrors(prev => ({ ...prev, product_id: undefined }));
+                      }}
+                    >
+                      <SelectTrigger id="brand" className="mt-1">
+                        <SelectValue placeholder="เลือกแบรนด์เพื่อกรอง (ไม่บังคับ)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ทั้งหมด</SelectItem>
+                        {brands.map((brand) => (
+                          <SelectItem key={brand.brand_id} value={brand.brand_id.toString()}>
+                            {brand.brand_name_th} {brand.brand_name_en && `(${brand.brand_name_en})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  
                 </div>
               )}
 
@@ -1464,12 +1577,12 @@ export default function InventoryPage() {
                 )}
               </div>
 
-              {selectedWarehouse && (
+              {selectedWarehouseForForm && (
                 <div className="p-4 bg-gray-50 rounded-lg">
                   <p className="text-sm font-medium text-gray-900 mb-2">ข้อมูลคลังสินค้า</p>
                   <div className="space-y-1 text-xs text-gray-600">
-                    <p><span className="font-medium">ชื่อคลัง:</span> {selectedWarehouse.warehousename}</p>
-                    <p><span className="font-medium">ที่อยู่:</span> {selectedWarehouse.locationaddress}</p>
+                    <p><span className="font-medium">ชื่อคลัง:</span> {selectedWarehouseForForm.warehousename}</p>
+                    <p><span className="font-medium">ที่อยู่:</span> {selectedWarehouseForForm.locationaddress}</p>
                   </div>
                 </div>
               )}
@@ -1569,6 +1682,12 @@ export default function InventoryPage() {
                       {subCategories.find(sc => sc.sub_category_id === formData.sub_category_id)?.sub_category_name_th || 'N/A'}
                     </p>
                   )}
+                  {formData.brand_id && (
+                    <p>
+                      <span className="font-medium">แบรนด์:</span>{' '}
+                      {brands.find(b => b.brand_id === formData.brand_id)?.brand_name_th || 'N/A'}
+                    </p>
+                  )}
                   <p><span className="font-medium">สินค้า:</span> {selectedProduct?.product_name_th || 'N/A'}</p>
                   {formData.variant_id && (() => {
                     const selectedVariant = selectedProductVariants.find((v: any) => v.variant_id === formData.variant_id);
@@ -1594,7 +1713,7 @@ export default function InventoryPage() {
                       </div>
                     );
                   })()}
-                  <p><span className="font-medium">คลังสินค้า:</span> {selectedWarehouse?.warehousename || 'N/A'}</p>
+                  <p><span className="font-medium">คลังสินค้า:</span> {selectedWarehouseForForm?.warehousename || 'N/A'}</p>
                   <p><span className="font-medium">จำนวนสินค้า:</span> {formData.stock_quantity || 0}</p>
                   <p><span className="font-medium">จำนวนที่จอง:</span> {formData.reserved_quantity || 0}</p>
                   <p><span className="font-medium">จำนวนที่พร้อมขาย:</span> {Math.max(0, (formData.stock_quantity || 0) - (formData.reserved_quantity || 0))}</p>
