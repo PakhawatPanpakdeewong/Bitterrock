@@ -22,6 +22,7 @@ type Variant = {
   variant_name: string;
   sku: string | null;
   price: number;
+  cost?: number | null;
   description?: string;
   image_url?: string | null;
   is_active?: boolean | null;
@@ -102,6 +103,7 @@ export default function ProductsPage() {
   const [isDeleteVariantModalOpen, setIsDeleteVariantModalOpen] = useState(false);
   const [variantFormData, setVariantFormData] = useState({
     price: '',
+    cost: '',
     is_active: true
   });
   const [isVariantSubmitting, setIsVariantSubmitting] = useState(false);
@@ -120,6 +122,7 @@ export default function ProductsPage() {
   const [selectedMainAttribute, setSelectedMainAttribute] = useState<string>("");
   const [selectedSecondaryAttribute, setSelectedSecondaryAttribute] = useState<string>("");
   const [variantPrice, setVariantPrice] = useState<string>("");
+  const [variantCost, setVariantCost] = useState<string>("");
   const [variantIsActive, setVariantIsActive] = useState<boolean>(false);
   const [isAddBrandModalOpen, setIsAddBrandModalOpen] = useState<boolean>(false);
   const [newBrandForm, setNewBrandForm] = useState({
@@ -608,6 +611,7 @@ export default function ProductsPage() {
           attribute_value_ids: selectedAttributeValues.length > 0 ? selectedAttributeValues : [],
           sku: variantSku,
           price: Number(variantPrice || 0),
+          cost: variantCost && !Number.isNaN(Number(variantCost)) ? Number(variantCost) : null,
           is_active: variantIsActive // Will be false by default (no image = not active)
             };
             
@@ -670,6 +674,7 @@ export default function ProductsPage() {
       setSelectedMainAttribute("");
       setSelectedSecondaryAttribute("");
       setVariantPrice("");
+      setVariantCost("");
       setVariantIsActive(false);
       setUploadedImages([]);
       setImagePreviews([]);
@@ -1152,6 +1157,7 @@ export default function ProductsPage() {
         'หมวดหมู่': product.sub_categories_name || '',
         'แบรนด์': product.brand_name_th ? `${product.brand_name_th} (${product.brand_name_en})` : 'Non-Brand',
         'ราคา': variant?.price ? variant.price : '',
+        'ต้นทุน': variant?.cost != null ? variant.cost : '',
         'สถานะการใช้งาน': variant?.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน',
         'วันที่สร้าง': product.created_date ? formatDate(product.created_date) : '',
         'รายละเอียด': product.description || '',
@@ -1171,6 +1177,7 @@ export default function ProductsPage() {
       { wch: 20 }, // หมวดหมู่
       { wch: 25 }, // แบรนด์
       { wch: 12 }, // ราคา
+      { wch: 12 }, // ต้นทุน
       { wch: 18 }, // สถานะการใช้งาน
       { wch: 20 }, // วันที่สร้าง
       { wch: 40 }, // รายละเอียด
@@ -1218,6 +1225,7 @@ export default function ProductsPage() {
                 <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">หมวดหมู่</th>
                 <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">แบรนด์</th>
                 <th style="border: 1px solid #ddd; padding: 6px; text-align: right;">ราคา</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: right;">ต้นทุน</th>
                 <th style="border: 1px solid #ddd; padding: 6px; text-align: center;">สถานะ</th>
                 <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">วันที่สร้าง</th>
               </tr>
@@ -1234,6 +1242,7 @@ export default function ProductsPage() {
                   <td style="border: 1px solid #ddd; padding: 5px;">${product.sub_categories_name || ''}</td>
                   <td style="border: 1px solid #ddd; padding: 5px;">${product.brand_name_th ? `${product.brand_name_th} (${product.brand_name_en})` : 'Non-Brand'}</td>
                   <td style="border: 1px solid #ddd; padding: 5px; text-align: right;">${variant?.price ? `฿${formatCurrency(variant.price)}` : ''}</td>
+                  <td style="border: 1px solid #ddd; padding: 5px; text-align: right;">${variant?.cost != null ? `฿${formatCurrency(variant.cost)}` : ''}</td>
                   <td style="border: 1px solid #ddd; padding: 5px; text-align: center;">${variant?.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน'}</td>
                   <td style="border: 1px solid #ddd; padding: 5px;">${product.created_date ? formatDate(product.created_date) : 'N/A'}</td>
                 </tr>
@@ -1745,13 +1754,14 @@ export default function ProductsPage() {
                         <TH>คุณสมบัติ</TH>
                         <TH>SKU</TH>
                         <TH>ราคา</TH>
+                        <TH>ต้นทุน</TH>
                         <TH>สถานะ</TH>
                       </TR>
                     </THead>
                     <TBody>
                       {variants.length === 0 ? (
                         <TR>
-                          <TD colSpan={7} className="text-center text-gray-500 py-8">
+                          <TD colSpan={8} className="text-center text-gray-500 py-8">
                             ไม่พบข้อมูลความหลากหลายของสินค้า
                           </TD>
                         </TR>
@@ -1764,6 +1774,7 @@ export default function ProductsPage() {
                                 setEditingVariant(v); 
                                 setVariantFormData({
                                   price: String(v.price ?? ''),
+                                  cost: v.cost != null ? String(v.cost) : '',
                                   is_active: !!v.is_active
                                 }); 
                                 setIsEditVariantModalOpen(true);
@@ -1787,6 +1798,7 @@ export default function ProductsPage() {
                             </TD>
                             <TD>{v.sku || '-'}</TD>
                             <TD>{`฿${Number(v.price).toFixed(2)}`}</TD>
+                            <TD>{v.cost != null ? `฿${Number(v.cost).toFixed(2)}` : '-'}</TD>
                             <TD>
                               {v.is_active ? (
                                 <span className="px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-green-100 text-green-800">เปิดการขาย</span>
@@ -2732,6 +2744,18 @@ export default function ProductsPage() {
                       placeholder="กรอกราคา"
                   />
                 </div>
+                <div>
+                    <Label htmlFor="variant_cost">ต้นทุน</Label>
+                  <Input 
+                      id="variant_cost"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={variantCost}
+                      onChange={(e) => setVariantCost(e.target.value)}
+                      placeholder="กรอกต้นทุนสินค้า (ไม่บังคับ)"
+                  />
+                </div>
 
                 </div>
               )}
@@ -3255,7 +3279,7 @@ export default function ProductsPage() {
         onClose={() => { 
           setIsEditVariantModalOpen(false); 
           setEditingVariant(null);
-          setVariantFormData({ price: '', is_active: true });
+          setVariantFormData({ price: '', cost: '', is_active: true });
         }}
         title="แก้ไขความหลากหลายของสินค้า"
       >
@@ -3280,6 +3304,17 @@ export default function ProductsPage() {
               onChange={(e) => setVariantFormData({ ...variantFormData, price: e.target.value })} 
             />
           </div>
+          <div>
+            <Label htmlFor="edit_variant_cost">ต้นทุน</Label>
+            <Input 
+              id="edit_variant_cost" 
+              type="number" 
+              step="0.01" 
+              min="0" 
+              value={variantFormData.cost} 
+              onChange={(e) => setVariantFormData({ ...variantFormData, cost: e.target.value })} 
+            />
+          </div>
           <div className="flex items-center gap-2">
             <input 
               type="checkbox" 
@@ -3296,7 +3331,7 @@ export default function ProductsPage() {
               onClick={() => { 
                 setIsEditVariantModalOpen(false); 
                 setEditingVariant(null);
-                setVariantFormData({ price: '', is_active: true });
+                setVariantFormData({ price: '', cost: '', is_active: true });
               }}
             >
               ยกเลิก
@@ -3323,6 +3358,7 @@ export default function ProductsPage() {
                     body: JSON.stringify({ 
                       variant_id: editingVariant.variant_id, 
                       price: Number(variantFormData.price), 
+                      cost: variantFormData.cost && !Number.isNaN(Number(variantFormData.cost)) ? Number(variantFormData.cost) : null,
                       is_active: variantFormData.is_active 
                     }) 
                   });
@@ -3332,7 +3368,7 @@ export default function ProductsPage() {
                     setVariantsError(null); 
                     setIsEditVariantModalOpen(false); 
                     setEditingVariant(null);
-                    setVariantFormData({ price: '', is_active: true });
+                    setVariantFormData({ price: '', cost: '', is_active: true });
                   } else { 
                     setVariantsError(json.error || 'Failed to update variant'); 
                   }

@@ -27,7 +27,11 @@ import {
   ChevronRight,
   ChevronLeft,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Package,
+  Mail,
+  MapPin,
+  Calendar
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 
@@ -46,6 +50,21 @@ type Order = {
   customer_email: string;
   item_count: number;
   delivery_status: string;
+};
+
+type OrderItemDetail = {
+  order_item_id: number;
+  product_name_th: string;
+  product_name_en: string;
+  sku: string;
+  quantity_ordered: number;
+  unit_price: number;
+  total_price: number;
+  attribute_values: string | null;
+};
+
+type OrderDetail = Order & {
+  items: OrderItemDetail[];
 };
 
 type OrderStats = {
@@ -77,6 +96,8 @@ export default function OrdersPage() {
   // Modal states
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -121,14 +142,30 @@ export default function OrdersPage() {
     fetchOrders();
   };
 
-  const handleViewDetail = (order: Order) => {
+  const handleViewDetail = async (order: Order) => {
     setSelectedOrder(order);
     setIsDetailModalOpen(true);
+    setDetailLoading(true);
+    setOrderDetail(null);
+    try {
+      const res = await fetch(`/api/orders/${order.order_id}`);
+      const data = await res.json();
+      if (data.ok) {
+        setOrderDetail(data.order);
+      } else {
+        setOrderDetail({ ...order, items: [] });
+      }
+    } catch {
+      setOrderDetail({ ...order, items: [] });
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const handleCloseDetail = () => {
     setIsDetailModalOpen(false);
     setSelectedOrder(null);
+    setOrderDetail(null);
   };
 
   const handleEditClick = (order: Order) => {
@@ -645,47 +682,114 @@ export default function OrdersPage() {
         isOpen={isDetailModalOpen}
         onClose={handleCloseDetail}
         title="รายละเอียดออเดอร์"
+        className="max-w-lg"
       >
         {selectedOrder && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-semibold mb-2">หมายเลขออเดอร์</p>
-              <p className="text-sm text-gray-600">{formatOrderNumber(selectedOrder.order_id, selectedOrder.order_date)}</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">ลูกค้า</p>
-              <p className="text-sm text-gray-600">คุณ{selectedOrder.customer_first_name} {selectedOrder.customer_last_name}</p>
-              <p className="text-sm text-gray-600">{selectedOrder.customer_email}</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">ยอดการสั่งซื้อ</p>
-              <p className="text-sm text-gray-600">฿{formatCurrency(selectedOrder.total_amount)}</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">จำนวนสินค้า</p>
-              <p className="text-sm text-gray-600">{selectedOrder.item_count} รายการ</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">สถานะการสั่งซื้อ</p>
-              <div>{getOrderStatusBadge(selectedOrder.order_status)}</div>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">สถานะการจัดส่ง</p>
-              <div>{getDeliveryStatusBadge(selectedOrder.delivery_status)}</div>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">ที่อยู่จัดส่ง</p>
-              <p className="text-sm text-gray-600">{selectedOrder.shipping_address}</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold mb-2">วันที่สั่งซื้อ</p>
-              <p className="text-sm text-gray-600">{formatDate(selectedOrder.order_date)}</p>
-            </div>
-            {selectedOrder.notes && (
-              <div>
-                <p className="text-sm font-semibold mb-2">หมายเหตุ</p>
-                <p className="text-sm text-gray-600">{selectedOrder.notes}</p>
+          <div className="space-y-6">
+            {detailLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-pink-500 border-t-transparent" />
               </div>
+            ) : orderDetail ? (
+              <>
+                {/* Order number & status row */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-gray-100">
+                  <p className="text-base font-medium text-gray-900">
+                    {formatOrderNumber(orderDetail.order_id, orderDetail.order_date)}
+                  </p>
+                  <div className="flex gap-2">
+                    {getOrderStatusBadge(orderDetail.order_status)}
+                    {getDeliveryStatusBadge(orderDetail.delivery_status)}
+                  </div>
+                </div>
+
+                {/* Customer & date */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl bg-gray-50/80 p-4">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                      <User className="w-3.5 h-3.5" />
+                      ลูกค้า
+                    </div>
+                    <p className="text-sm font-medium text-gray-900">คุณ{orderDetail.customer_first_name} {orderDetail.customer_last_name}</p>
+                    <a href={`mailto:${orderDetail.customer_email}`} className="flex items-center gap-1.5 mt-1 text-sm text-gray-600 hover:text-pink-600 transition-colors">
+                      <Mail className="w-3.5 h-3.5" />
+                      {orderDetail.customer_email}
+                    </a>
+                  </div>
+                  <div className="rounded-xl bg-gray-50/80 p-4">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                      <Calendar className="w-3.5 h-3.5" />
+                      วันที่สั่งซื้อ
+                    </div>
+                    <p className="text-sm text-gray-900">{formatDate(orderDetail.order_date)}</p>
+                  </div>
+                </div>
+
+                {/* Product list */}
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                    <Package className="w-3.5 h-3.5" />
+                    รายการสินค้า ({orderDetail.items?.length || orderDetail.item_count} รายการ)
+                  </div>
+                  {orderDetail.items && orderDetail.items.length > 0 ? (
+                    <div className="rounded-xl border border-gray-100 overflow-hidden">
+                      <div className="divide-y divide-gray-50">
+                        {orderDetail.items.map((item) => (
+                          <div key={item.order_item_id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50/50 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {item.product_name_th || item.product_name_en}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-gray-500">{item.sku}</span>
+                                {item.attribute_values && (
+                                  <span className="text-xs text-gray-400">• {item.attribute_values}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-4">
+                              <span className="text-xs text-gray-500">
+                                x{item.quantity_ordered}
+                              </span>
+                              <span className="text-sm font-medium text-gray-900 min-w-[4rem] text-right">
+                                ฿{formatCurrency(item.total_price)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-500">
+                      ไม่พบรายการสินค้า
+                    </div>
+                  )}
+                </div>
+
+                {/* Shipping address */}
+                <div className="rounded-xl bg-gray-50/80 p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    <MapPin className="w-3.5 h-3.5" />
+                    ที่อยู่จัดส่ง
+                  </div>
+                  <p className="text-sm text-gray-700 leading-relaxed">{orderDetail.shipping_address}</p>
+                </div>
+
+                {/* Total */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <span className="text-sm font-medium text-gray-600">ยอดรวม</span>
+                  <span className="text-lg font-semibold text-gray-900">฿{formatCurrency(orderDetail.total_amount)}</span>
+                </div>
+
+                {orderDetail.notes && (
+                  <div className="rounded-xl bg-amber-50/60 p-4 border border-amber-100">
+                    <p className="text-xs font-medium text-amber-800/80 mb-1">หมายเหตุ</p>
+                    <p className="text-sm text-amber-900/90">{orderDetail.notes}</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-8">ไม่สามารถโหลดรายละเอียดได้</p>
             )}
           </div>
         )}

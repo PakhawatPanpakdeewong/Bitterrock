@@ -25,6 +25,7 @@ type DbVariant = {
   attribute_value_en: string | null;
   sku: string | null;
   price: string; // numeric
+  cost: string | null; // numeric, nullable
   image_url: string | null;
   is_active: boolean | null;
   attribute_value_ids: string | null;
@@ -102,7 +103,7 @@ export async function GET(req: NextRequest) {
 
     // Fetch variants for these products; join attribute values and attributes for labels - using lowercase column names without underscores
     const variantsRes = await query(
-      `SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, NULL as image_url, pv.isactive as is_active,
+      `SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, pv.cost, NULL as image_url, pv.isactive as is_active,
               STRING_AGG(DISTINCT av.attributevalueth, ', ' ORDER BY av.attributevalueth) as attribute_value_th,
               STRING_AGG(DISTINCT av.attributevalueen, ', ' ORDER BY av.attributevalueen) as attribute_value_en,
               STRING_AGG(DISTINCT a.attributenameth, ', ' ORDER BY a.attributenameth) as attribute_name_th,
@@ -114,7 +115,7 @@ export async function GET(req: NextRequest) {
        LEFT JOIN attributevalues av ON av.attributevalueid = pva.attributevalueid
        LEFT JOIN attributes a ON a.attributeid = av.attributeid
        WHERE pv.productid = ANY($1::int[])
-       GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.isactive
+       GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.cost, pv.isactive
        ORDER BY pv.productid, pv.variantid`,
       [productIds]
     );
@@ -145,6 +146,7 @@ export async function GET(req: NextRequest) {
           : v.sku || `Variant ${v.variant_id}`,
         sku: v.sku,
         price: Number(v.price),
+        cost: v.cost != null && v.cost !== '' ? Number(v.cost) : null,
         image_url: v.image_url,
         is_active: v.is_active ?? true,
         attribute_value_ids: v.attribute_value_ids ? v.attribute_value_ids.split(', ').map((id: string) => parseInt(id)).filter((id: number) => !isNaN(id)) : [],

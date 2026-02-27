@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const categoryId = searchParams.get('category_id');
     
     let sql = `
-      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, pv.isactive as is_active,
+      SELECT pv.variantid as variant_id, pv.productid as product_id, pv.sku, pv.price, pv.cost, pv.isactive as is_active,
              p.productnameth as product_name_th,
              sc.subcategorynameth as sub_category_name_th,
              sc.subcategorynameen as sub_category_name_en,
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
     
-    sql += ` GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.isactive, p.productnameth, sc.subcategorynameth, sc.subcategorynameen, c.categoryid, c.categorynameth, c.categorynameen
+    sql += ` GROUP BY pv.variantid, pv.productid, pv.sku, pv.price, pv.cost, pv.isactive, p.productnameth, sc.subcategorynameth, sc.subcategorynameen, c.categoryid, c.categorynameth, c.categorynameen
              ORDER BY pv.variantid LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       product_id: number;
       sku: string | null;
       price: string;
+      cost?: string | null;
       image_url?: string | null;
       is_active: boolean | null;
       product_name_th: string;
@@ -97,6 +98,7 @@ export async function GET(req: NextRequest) {
       attributes: v.attributes || [],
       sku: v.sku,
       price: Number(v.price),
+      cost: v.cost != null ? Number(v.cost) : null,
       image_url: v.image_url ?? null,
       is_active: v.is_active,
     }));
@@ -116,6 +118,7 @@ export async function POST(req: NextRequest) {
       attribute_value_ids, // Can be array or single value
       sku = null,
       price,
+      cost = null,
       image_url = null,
       is_active = true,
     } = body || {};
@@ -139,10 +142,10 @@ export async function POST(req: NextRequest) {
 
     // Insert variant first (without attributes)
     const insertRes = await query(
-      `INSERT INTO productvariants (productid, sku, price, isactive)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO productvariants (productid, sku, price, cost, isactive)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING variantid as variant_id`,
-      [Number(product_id), sku, Number(price), is_active]
+      [Number(product_id), sku, Number(price), cost != null && !Number.isNaN(Number(cost)) ? Number(cost) : null, is_active]
     );
 
     const variantId = insertRes.rows[0].variant_id;
@@ -195,6 +198,7 @@ export async function PUT(req: NextRequest) {
     const fieldMapping: Record<string, string> = {
       sku: 'sku',
       price: 'price',
+      cost: 'cost',
       image_url: 'imageurl',
       is_active: 'isactive',
     };
@@ -202,6 +206,7 @@ export async function PUT(req: NextRequest) {
     const updatable = {
       sku: body?.sku,
       price: body?.price !== undefined ? Number(body?.price) : undefined,
+      cost: body?.cost !== undefined ? (body?.cost != null && !Number.isNaN(Number(body?.cost)) ? Number(body?.cost) : null) : undefined,
       image_url: body?.image_url,
       is_active: body?.is_active,
     } as Record<string, any>;
