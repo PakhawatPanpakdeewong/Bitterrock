@@ -7,6 +7,7 @@ type DbOrder = {
   order_date: string;
   total_amount: number;
   order_status: string;
+  payment_status: string;
   shipping_address: string;
   notes: string | null;
   created_date: string;
@@ -30,8 +31,12 @@ export async function GET(req: NextRequest) {
     let whereConditions: string[] = [];
 
     if (status && status !== 'all') {
-      whereConditions.push(`o.orderstatus = $${params.length + 1}`);
-      params.push(status);
+      if (status === 'shipped') {
+        whereConditions.push(`(o.orderstatus = 'shipped' OR o.orderstatus = 'delivered')`);
+      } else {
+        whereConditions.push(`o.orderstatus = $${params.length + 1}`);
+        params.push(status);
+      }
     }
 
     if (search) {
@@ -43,7 +48,7 @@ export async function GET(req: NextRequest) {
     
     params.push(limit, offset);
 
-    // Fetch orders with customer info and item count
+    // Fetch orders with customer info, item count, payment_status (สถานะการสั่งซื้อ), order_status (สถานะออเดอร์/การจัดส่ง)
     const ordersRes = await query(
       `SELECT 
         o.orderid as order_id,
@@ -51,6 +56,14 @@ export async function GET(req: NextRequest) {
         o.orderdate as order_date,
         o.totalamount as total_amount,
         o.orderstatus as order_status,
+        COALESCE(
+          (SELECT p.paymentstatus FROM payments p WHERE p.orderid = o.orderid ORDER BY p.paymentid DESC LIMIT 1),
+          CASE 
+            WHEN o.orderstatus = 'cancelled' THEN 'failed'
+            WHEN o.orderstatus IN ('confirmed', 'shipped', 'delivered') THEN 'completed'
+            ELSE 'pending'
+          END
+        ) as payment_status,
         o.shippingaddress as shipping_address,
         o.notes,
         o.createddate as created_date,
@@ -60,12 +73,12 @@ export async function GET(req: NextRequest) {
         c.email as customer_email,
         COUNT(oi.orderitemid) as item_count,
         CASE 
-          WHEN o.orderstatus = 'cancelled' THEN 'ยังไม่ดำเนินการ'
-          WHEN o.orderstatus = 'pending' THEN 'ยังไม่ดำเนินการ'
-          WHEN o.orderstatus = 'confirmed' THEN 'จัดเตรียมสินค้า'
-          WHEN o.orderstatus = 'shipped' THEN 'กำลังจัดส่ง'
-          WHEN o.orderstatus = 'delivered' THEN 'จัดส่งสำเร็จ'
-          ELSE 'ยังไม่ดำเนินการ'
+          WHEN o.orderstatus = 'cancelled' THEN 'cancelled'
+          WHEN o.orderstatus = 'pending' THEN 'pending'
+          WHEN o.orderstatus = 'confirmed' THEN 'confirmed'
+          WHEN o.orderstatus = 'shipped' THEN 'shipped'
+          WHEN o.orderstatus = 'delivered' THEN 'shipped'
+          ELSE 'pending'
         END as delivery_status
       FROM orders o
       JOIN customers c ON c.customerid = o.customerid
@@ -129,12 +142,71 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Get current order status and payment status
+    const currentRes = await query(
+      `SELECT o.orderstatus,
+        (SELECT p.paymentstatus FROM payments p WHERE p.orderid = o.orderid ORDER BY p.paymentid DESC LIMIT 1) as paymentstatus
+       FROM orders o WHERE o.orderid = $1`,
+      [order_id]
+    );
+    if (currentRes.rows.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Order not found' }, { status: 404 });
+    }
+    const currentOrderStatus = currentRes.rows[0].orderstatus;
+    const paymentStatus = currentRes.rows[0].paymentstatus;
+    const isPaymentCompleted = paymentStatus === 'completed' || 
+      ['confirmed', 'shipped', 'delivered'].includes(currentOrderStatus);
+
+    // ตรวจสอบการเปลี่ยนสถานะ: ห้ามข้ามขั้นตอน pending -> confirmed -> shipped
+    // ถ้าจ่ายเงินสำเร็จแล้ว ห้ามยกเลิก
+    let allowed: string[] = [];
+    const current = currentOrderStatus === 'delivered' ? 'shipped' : currentOrderStatus;
+    if (current === 'pending') {
+      allowed = isPaymentCompleted ? ['confirmed'] : ['confirmed', 'cancelled'];
+    } else if (current === 'confirmed') {
+      allowed = ['shipped']; // จ่ายเงินสำเร็จแล้ว ไม่ให้ยกเลิก
+    } else if (current === 'shipped' || current === 'cancelled') {
+      allowed = [];
+    }
+    if (!allowed.includes(order_status)) {
+      if (order_status === 'cancelled' && isPaymentCompleted) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: 'ไม่สามารถยกเลิกออเดอร์ที่ชำระเงินสำเร็จแล้วได้' 
+        }, { status: 400 });
+      }
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'การเปลี่ยนสถานะไม่ถูกต้อง ห้ามข้ามขั้นตอนหรือย้อนกลับ (ยังไม่ดำเนินการ → ยืนยันออเดอร์ → จัดส่งแล้ว)' 
+      }, { status: 400 });
+    }
+
+    // Update order status
     await query(
       `UPDATE orders 
        SET orderstatus = $1, updateddate = CURRENT_TIMESTAMP
        WHERE orderid = $2`,
       [order_status, order_id]
     );
+
+    // เมื่อเปลี่ยนจาก รอการชำระเงิน(pending) เป็น ยืนยันออเดอร์(confirmed) ให้อัปเดต payment status เป็น completed ด้วย
+    if (currentOrderStatus === 'pending' && order_status === 'confirmed') {
+      await query(
+        `UPDATE payments 
+         SET paymentstatus = 'completed', updateddate = CURRENT_TIMESTAMP
+         WHERE orderid = $1`,
+        [order_id]
+      );
+    }
+    // เมื่อยกเลิกออเดอร์ ให้อัปเดต payment status เป็น failed ด้วย
+    if (order_status === 'cancelled') {
+      await query(
+        `UPDATE payments 
+         SET paymentstatus = 'failed', updateddate = CURRENT_TIMESTAMP
+         WHERE orderid = $1 AND paymentstatus = 'pending'`,
+        [order_id]
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
@@ -151,6 +223,28 @@ export async function DELETE(req: NextRequest) {
 
     if (!orderId) {
       return NextResponse.json({ ok: false, error: 'Missing order ID' }, { status: 400 });
+    }
+
+    // ตรวจสอบว่าจ่ายเงินสำเร็จแล้วหรือไม่ - ถ้าสำเร็จแล้วห้ามลบ
+    const checkRes = await query(
+      `SELECT o.orderstatus,
+        (SELECT p.paymentstatus FROM payments p WHERE p.orderid = o.orderid ORDER BY p.paymentid DESC LIMIT 1) as paymentstatus
+       FROM orders o WHERE o.orderid = $1`,
+      [orderId]
+    );
+    if (checkRes.rows.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Order not found' }, { status: 404 });
+    }
+    const row = checkRes.rows[0];
+    const paymentStatus = row.paymentstatus;
+    const orderStatus = row.orderstatus;
+    const isPaymentCompleted = paymentStatus === 'completed' || 
+      ['confirmed', 'shipped', 'delivered'].includes(orderStatus);
+    if (isPaymentCompleted) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'ไม่สามารถลบออเดอร์ที่ชำระเงินสำเร็จแล้วได้' 
+      }, { status: 400 });
     }
 
     await query(

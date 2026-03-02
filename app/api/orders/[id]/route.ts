@@ -18,6 +18,7 @@ export type OrderDetail = {
   order_date: string;
   total_amount: number;
   order_status: string;
+  payment_status: string;
   shipping_address: string;
   notes: string | null;
   customer_first_name: string;
@@ -46,6 +47,14 @@ export async function GET(
         o.orderdate as order_date,
         o.totalamount as total_amount,
         o.orderstatus as order_status,
+        COALESCE(
+          (SELECT p.paymentstatus FROM payments p WHERE p.orderid = o.orderid ORDER BY p.paymentid DESC LIMIT 1),
+          CASE 
+            WHEN o.orderstatus = 'cancelled' THEN 'failed'
+            WHEN o.orderstatus IN ('confirmed', 'shipped', 'delivered') THEN 'completed'
+            ELSE 'pending'
+          END
+        ) as payment_status,
         o.shippingaddress as shipping_address,
         o.notes,
         c.firstname as customer_first_name,
@@ -53,12 +62,12 @@ export async function GET(
         c.email as customer_email,
         COUNT(oi.orderitemid) OVER (PARTITION BY o.orderid) as item_count,
         CASE 
-          WHEN o.orderstatus = 'cancelled' THEN 'ยังไม่ดำเนินการ'
-          WHEN o.orderstatus = 'pending' THEN 'ยังไม่ดำเนินการ'
-          WHEN o.orderstatus = 'confirmed' THEN 'จัดเตรียมสินค้า'
-          WHEN o.orderstatus = 'shipped' THEN 'กำลังจัดส่ง'
-          WHEN o.orderstatus = 'delivered' THEN 'จัดส่งสำเร็จ'
-          ELSE 'ยังไม่ดำเนินการ'
+          WHEN o.orderstatus = 'cancelled' THEN 'cancelled'
+          WHEN o.orderstatus = 'pending' THEN 'pending'
+          WHEN o.orderstatus = 'confirmed' THEN 'confirmed'
+          WHEN o.orderstatus = 'shipped' THEN 'shipped'
+          WHEN o.orderstatus = 'delivered' THEN 'shipped'
+          ELSE 'pending'
         END as delivery_status
       FROM orders o
       JOIN customers c ON c.customerid = o.customerid
@@ -107,6 +116,7 @@ export async function GET(
       order_date: order.order_date,
       total_amount: parseFloat(order.total_amount),
       order_status: order.order_status,
+      payment_status: order.payment_status || 'pending',
       shipping_address: order.shipping_address,
       notes: order.notes,
       customer_first_name: order.customer_first_name,

@@ -41,6 +41,7 @@ type Order = {
   order_date: string;
   total_amount: number;
   order_status: string;
+  payment_status: string;
   shipping_address: string;
   notes: string | null;
   created_date: string;
@@ -105,6 +106,9 @@ export default function OrdersPage() {
   const [orderToEdit, setOrderToEdit] = useState<Order | null>(null);
   const [editStatus, setEditStatus] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [isConfirmEditModalOpen, setIsConfirmEditModalOpen] = useState(false);
+  const [pendingEdit, setPendingEdit] = useState<{ order: Order; newStatus: string } | null>(null);
+  const [markingDelivered, setMarkingDelivered] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -168,9 +172,74 @@ export default function OrdersPage() {
     setOrderDetail(null);
   };
 
+  // ขั้นตอนที่อนุญาต: pending -> confirmed -> shipped (ไม่สามารถข้ามหรือย้อนกลับได้)
+  // ถ้าจ่ายเงินสำเร็จแล้ว (confirmed/shipped) ห้ามยกเลิก
+  const getNextAllowedStatuses = (order: Order): { value: string; label: string }[] => {
+    const s = order.order_status === 'delivered' ? 'shipped' : order.order_status;
+    const isPaymentCompleted = order.payment_status === 'completed' || 
+      ['confirmed', 'shipped', 'delivered'].includes(order.order_status);
+    switch (s) {
+      case 'pending':
+        return isPaymentCompleted 
+          ? [{ value: 'confirmed', label: 'ยืนยันออเดอร์' }]
+          : [
+              { value: 'confirmed', label: 'ยืนยันออเดอร์' },
+              { value: 'cancelled', label: 'ถูกยกเลิก' },
+            ];
+      case 'confirmed':
+        return [{ value: 'shipped', label: 'จัดส่งแล้ว' }]; // จ่ายเงินแล้ว ไม่ให้ยกเลิก
+      case 'shipped':
+      case 'cancelled':
+        return [];
+      default:
+        return [
+          { value: 'confirmed', label: 'ยืนยันออเดอร์' },
+          { value: 'cancelled', label: 'ถูกยกเลิก' },
+        ];
+    }
+  };
+
+  const canEditOrder = (order: Order) => {
+    const s = order.order_status === 'delivered' ? 'shipped' : order.order_status;
+    return s !== 'shipped' && s !== 'cancelled';
+  };
+
+  const canDeleteOrder = (order: Order) => {
+    if (order.payment_status === 'completed') return false;
+    if (['confirmed', 'shipped', 'delivered'].includes(order.order_status)) return false;
+    return true;
+  };
+
+  const canMarkDelivered = (order: Order) => {
+    return order.order_status === 'shipped' && order.payment_status === 'completed';
+  };
+
+  const handleMarkDelivered = async (order: Order) => {
+    if (!canMarkDelivered(order)) return;
+    if (!confirm('ยืนยันว่าสินค้าถูกส่งถึงลูกค้าแล้ว?')) return;
+    try {
+      setMarkingDelivered(true);
+      const res = await fetch(`/api/orders/${order.order_id}/delivered`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        await fetchOrders();
+        alert('ยืนยันจัดส่งถึงลูกค้าเรียบร้อยแล้ว');
+      } else {
+        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+      }
+    } catch (error) {
+      console.error('Error marking as delivered:', error);
+      alert('เกิดข้อผิดพลาดในการยืนยันจัดส่ง');
+    } finally {
+      setMarkingDelivered(false);
+    }
+  };
+
   const handleEditClick = (order: Order) => {
+    if (!canEditOrder(order)) return;
     setOrderToEdit(order);
-    setEditStatus(order.order_status);
+    const allowed = getNextAllowedStatuses(order);
+    setEditStatus(allowed[0]?.value || '');
     setIsEditModalOpen(true);
   };
 
@@ -180,8 +249,20 @@ export default function OrdersPage() {
     setEditStatus('');
   };
 
-  const handleEditSubmit = async () => {
+  const handleSaveClick = () => {
     if (!orderToEdit) return;
+    setPendingEdit({ order: orderToEdit, newStatus: editStatus });
+    setIsConfirmEditModalOpen(true);
+  };
+
+  const handleConfirmEditCancel = () => {
+    setIsConfirmEditModalOpen(false);
+    setPendingEdit(null);
+  };
+
+  const handleEditSubmit = async () => {
+    if (!pendingEdit) return;
+    const { order, newStatus } = pendingEdit;
 
     try {
       setUpdating(true);
@@ -189,8 +270,8 @@ export default function OrdersPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_id: orderToEdit.order_id,
-          order_status: editStatus
+          order_id: order.order_id,
+          order_status: newStatus
         }),
       });
 
@@ -198,6 +279,8 @@ export default function OrdersPage() {
 
       if (data.ok) {
         await fetchOrders();
+        setIsConfirmEditModalOpen(false);
+        setPendingEdit(null);
         setIsEditModalOpen(false);
         setOrderToEdit(null);
         alert('อัปเดตสถานะออเดอร์สำเร็จ');
@@ -286,31 +369,33 @@ export default function OrdersPage() {
     }
   };
 
-  const getOrderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-      case 'delivered':
+  // สถานะการสั่งซื้อ (จาก paymentstatus): สำเร็จ, รอการชำระเงิน, ยกเลิก
+  const getPaymentStatusBadge = (paymentStatus: string) => {
+    switch (paymentStatus) {
+      case 'completed':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">สำเร็จ</span>;
       case 'pending':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-yellow-100 text-yellow-800">รอการชำระเงิน</span>;
-      case 'shipped':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-blue-100 text-blue-800">กำลังจัดส่ง</span>;
-      case 'cancelled':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-red-100 text-red-800">ยกเลิกออเดอร์</span>;
+      case 'failed':
+      case 'refunded':
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-red-100 text-red-800">ยกเลิก</span>;
       default:
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-gray-100 text-gray-800">{status}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-gray-100 text-gray-800">{paymentStatus || 'รอการชำระเงิน'}</span>;
     }
   };
 
-  const getDeliveryStatusBadge = (deliveryStatus: string) => {
-    switch (deliveryStatus) {
-      case 'จัดเตรียมสินค้า':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-blue-100 text-blue-800">จัดเตรียมสินค้า</span>;
-      case 'กำลังจัดส่ง':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-pink-100 text-pink-800">กำลังจัดส่ง</span>;
-      case 'จัดส่งสำเร็จ':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">จัดส่งสำเร็จ</span>;
-      case 'ยังไม่ดำเนินการ':
+  // สถานะออเดอร์/การจัดส่ง: ยังไม่ดำเนินการ, ยืนยันออเดอร์, จัดส่งแล้ว, ถูกยกเลิก
+  const getOrderStatusBadge = (orderStatus: string) => {
+    switch (orderStatus) {
+      case 'confirmed':
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-blue-100 text-blue-800">ยืนยันออเดอร์</span>;
+      case 'shipped':
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-pink-100 text-pink-800">จัดส่งแล้ว</span>;
+      case 'delivered':
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">จัดส่งถึงลูกค้าแล้ว</span>;
+      case 'cancelled':
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-red-100 text-red-800">ถูกยกเลิก</span>;
+      case 'pending':
       default:
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-gray-100 text-gray-800">ยังไม่ดำเนินการ</span>;
     }
@@ -470,7 +555,7 @@ export default function OrdersPage() {
         {/* Order List Section */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base font-bold">รายการสินค้าในสต็อก</CardTitle>
+            <CardTitle className="text-base font-bold">รายการสั่งซื้อ</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Search and Filters */}
@@ -509,11 +594,10 @@ export default function OrdersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">ทุกสถานะ</SelectItem>
-                  <SelectItem value="pending">รอการชำระเงิน</SelectItem>
-                  <SelectItem value="confirmed">ยืนยันแล้ว</SelectItem>
-                  <SelectItem value="shipped">กำลังจัดส่ง</SelectItem>
-                  <SelectItem value="delivered">จัดส่งสำเร็จ</SelectItem>
-                  <SelectItem value="cancelled">ยกเลิก</SelectItem>
+                  <SelectItem value="pending">ยังไม่ดำเนินการ</SelectItem>
+                  <SelectItem value="confirmed">ยืนยันออเดอร์</SelectItem>
+                  <SelectItem value="shipped">จัดส่งแล้ว</SelectItem>
+                  <SelectItem value="cancelled">ถูกยกเลิก</SelectItem>
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" className="h-9 px-3">
@@ -560,10 +644,10 @@ export default function OrdersPage() {
                           <div className="text-xs text-gray-600">{order.item_count} รายการ</div>
                         </TD>
                         <TD>
-                          {getOrderStatusBadge(order.order_status)}
+                          {getPaymentStatusBadge(order.payment_status)}
                         </TD>
                         <TD>
-                          {getDeliveryStatusBadge(order.delivery_status)}
+                          {getOrderStatusBadge(order.order_status)}
                         </TD>
                         <TD>
                           <div className="text-xs text-gray-600">{formatDate(order.order_date)}</div>
@@ -582,8 +666,20 @@ export default function OrdersPage() {
                             <Button 
                               variant="outline" 
                               size="sm" 
+                              className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                              onClick={() => handleMarkDelivered(order)}
+                              disabled={!canMarkDelivered(order) || markingDelivered}
+                              title={canMarkDelivered(order) ? 'ยืนยันจัดส่งถึงลูกค้าแล้ว' : 'กดได้เมื่อสถานะเป็นจัดส่งแล้วและชำระเงินสำเร็จ'}
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
                               className="h-7 w-7 p-0"
                               onClick={() => handleEditClick(order)}
+                              disabled={!canEditOrder(order)}
+                              title={!canEditOrder(order) ? 'ออเดอร์นี้ไม่สามารถแก้ไขสถานะได้ (จัดส่งแล้วหรือถูกยกเลิก)' : 'แก้ไขสถานะ'}
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
@@ -592,6 +688,8 @@ export default function OrdersPage() {
                               size="sm" 
                               className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => handleDeleteClick(order)}
+                              disabled={!canDeleteOrder(order)}
+                              title={!canDeleteOrder(order) ? 'ไม่สามารถลบออเดอร์ที่ชำระเงินสำเร็จแล้วได้' : 'ลบออเดอร์'}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
@@ -698,8 +796,8 @@ export default function OrdersPage() {
                     {formatOrderNumber(orderDetail.order_id, orderDetail.order_date)}
                   </p>
                   <div className="flex gap-2">
+                    {getPaymentStatusBadge(orderDetail.payment_status)}
                     {getOrderStatusBadge(orderDetail.order_status)}
-                    {getDeliveryStatusBadge(orderDetail.delivery_status)}
                   </div>
                 </div>
 
@@ -795,35 +893,117 @@ export default function OrdersPage() {
         )}
       </Modal>
 
-      {/* Edit Modal */}
+      {/* Edit Modal - Redesigned */}
       <Modal
         isOpen={isEditModalOpen}
         onClose={handleCloseEdit}
-        title="แก้ไขสถานะออเดอร์"
+        title="เปลี่ยนสถานะออเดอร์"
       >
         {orderToEdit && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-semibold mb-2">หมายเลขออเดอร์</p>
-              <p className="text-sm text-gray-600">{formatOrderNumber(orderToEdit.order_id, orderToEdit.order_date)}</p>
+          <div className="space-y-6">
+            <div className="rounded-lg bg-gray-50 p-3">
+              <p className="text-xs text-gray-500 mb-1">หมายเลขออเดอร์</p>
+              <p className="text-sm font-semibold text-gray-900">{formatOrderNumber(orderToEdit.order_id, orderToEdit.order_date)}</p>
+              <div className="flex items-center gap-2 mt-2">
+                {getPaymentStatusBadge(orderToEdit.payment_status)}
+                {getOrderStatusBadge(orderToEdit.order_status)}
+              </div>
             </div>
+
+            {/* Visual flow */}
             <div>
-              <label className="block text-sm font-semibold mb-2">สถานะการสั่งซื้อ</label>
-              <Select value={editStatus} onValueChange={setEditStatus}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">รอการชำระเงิน</SelectItem>
-                  <SelectItem value="confirmed">ยืนยันแล้ว</SelectItem>
-                  <SelectItem value="shipped">กำลังจัดส่ง</SelectItem>
-                  <SelectItem value="delivered">จัดส่งสำเร็จ</SelectItem>
-                  <SelectItem value="cancelled">ยกเลิก</SelectItem>
-                </SelectContent>
-              </Select>
+              <p className="text-xs font-medium text-gray-500 mb-3">ขั้นตอนการดำเนินการ (ทำตามลำดับเท่านั้น)</p>
+              <div className="flex items-center gap-1">
+                {[
+                  { key: 'pending', label: 'ยังไม่ดำเนินการ' },
+                  { key: 'arrow1', label: '→' },
+                  { key: 'confirmed', label: 'ยืนยันออเดอร์' },
+                  { key: 'arrow2', label: '→' },
+                  { key: 'shipped', label: 'จัดส่งแล้ว' },
+                ].map((step) => {
+                  if (step.key.startsWith('arrow')) {
+                    return <span key={step.key} className="text-gray-300 text-sm px-0.5">→</span>;
+                  }
+                  const current = orderToEdit.order_status === 'delivered' ? 'shipped' : orderToEdit.order_status;
+                  const isCurrent = step.key === current;
+                  const isPast = ['pending', 'confirmed', 'shipped'].indexOf(step.key) < ['pending', 'confirmed', 'shipped'].indexOf(current);
+                  return (
+                    <div
+                      key={step.key}
+                      className={`flex-1 rounded-lg px-2 py-2 text-center text-xs font-medium ${
+                        isCurrent ? 'bg-pink-100 text-pink-800 ring-1 ring-pink-200' :
+                        isPast ? 'bg-green-50 text-green-700' :
+                        'bg-gray-100 text-gray-400'
+                      }`}
+                    >
+                      {step.label}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex justify-end gap-2 pt-4">
+
+            {/* Next step - use buttons for clarity */}
+            <div>
+              <p className="text-sm font-semibold mb-2">เลือกขั้นตอนถัดไป</p>
+              <div className="space-y-2">
+                {getNextAllowedStatuses(orderToEdit).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEditStatus(opt.value)}
+                    className={`w-full rounded-lg border-2 px-4 py-3 text-left text-sm font-medium transition-colors ${
+                      editStatus === opt.value
+                        ? 'border-pink-500 bg-pink-50 text-pink-800'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="mr-2">{editStatus === opt.value ? '●' : '○'}</span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {(orderToEdit.payment_status === 'completed' || ['confirmed', 'shipped', 'delivered'].includes(orderToEdit.order_status)) && (
+                <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                  <span>✓</span> ชำระเงินสำเร็จแล้ว — ไม่สามารถยกเลิกออเดอร์ได้
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <Button variant="outline" onClick={handleCloseEdit}>
+                ปิด
+              </Button>
+              <Button 
+                onClick={handleSaveClick}
+                disabled={updating || !editStatus}
+                className="bg-pink-500 hover:bg-pink-600"
+              >
+                {updating ? 'กำลังอัปเดต...' : 'บันทึก'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Confirm Edit Modal */}
+      <Modal
+        isOpen={isConfirmEditModalOpen}
+        onClose={handleConfirmEditCancel}
+        title="ยืนยันการเปลี่ยนสถานะ"
+      >
+        {pendingEdit && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              คุณแน่ใจหรือไม่ว่าต้องการเปลี่ยนสถานะออเดอร์ {formatOrderNumber(pendingEdit.order.order_id, pendingEdit.order.order_date)} เป็น &quot;{getNextAllowedStatuses(pendingEdit.order).find(o => o.value === pendingEdit.newStatus)?.label || pendingEdit.newStatus}&quot;?
+            </p>
+            {pendingEdit.newStatus === 'cancelled' && (
+              <p className="text-sm text-red-600 font-medium">
+                เมื่อยกเลิกแล้วจะไม่สามารถกลับไปขั้นตอนต่างๆ ได้
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={handleConfirmEditCancel}>
                 ยกเลิก
               </Button>
               <Button 
@@ -831,7 +1011,7 @@ export default function OrdersPage() {
                 disabled={updating}
                 className="bg-pink-500 hover:bg-pink-600"
               >
-                {updating ? 'กำลังอัปเดต...' : 'บันทึก'}
+                {updating ? 'กำลังอัปเดต...' : 'ยืนยัน'}
               </Button>
             </div>
           </div>
