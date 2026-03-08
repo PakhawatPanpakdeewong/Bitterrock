@@ -1,5 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { query } from '../../../database/connection';
+
+function getRandomTrackingNumber(): string | null {
+  try {
+    const filePath = join(process.cwd(), 'TrackingNumber.txt');
+    const content = readFileSync(filePath, 'utf-8');
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length === 0) return null;
+    return lines[Math.floor(Math.random() * lines.length)];
+  } catch {
+    return null;
+  }
+}
 
 type DbOrder = {
   order_id: number;
@@ -94,10 +111,12 @@ export async function GET(req: NextRequest) {
 
     const orders = ordersRes.rows as unknown as DbOrder[];
 
-    // Get summary statistics
+    // Get summary statistics (today + this month)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString();
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthStartStr = monthStart.toISOString();
 
     const statsRes = await query(
       `SELECT 
@@ -105,9 +124,11 @@ export async function GET(req: NextRequest) {
         COUNT(*) FILTER (WHERE o.orderstatus = 'pending' AND DATE(o.orderdate) = DATE($1)) as pending_today,
         COUNT(*) FILTER (WHERE o.orderstatus IN ('confirmed', 'shipped', 'delivered') AND DATE(o.orderdate) = DATE($1)) as successful_today,
         COALESCE(SUM(o.totalamount) FILTER (WHERE DATE(o.orderdate) = DATE($1)), 0) as sales_today,
+        COUNT(*) FILTER (WHERE o.orderdate >= $2) as orders_this_month,
+        COALESCE(SUM(o.totalamount) FILTER (WHERE o.orderdate >= $2), 0) as sales_this_month,
         COUNT(*) FILTER (WHERE o.orderstatus = 'pending') as total_pending
       FROM orders o`,
-      [todayStr]
+      [todayStr, monthStartStr]
     );
 
     const stats = statsRes.rows[0];
@@ -120,6 +141,8 @@ export async function GET(req: NextRequest) {
         pending_today: parseInt(stats.pending_today) || 0,
         successful_today: parseInt(stats.successful_today) || 0,
         sales_today: parseFloat(stats.sales_today) || 0,
+        orders_this_month: parseInt(stats.orders_this_month) || 0,
+        sales_this_month: parseFloat(stats.sales_this_month) || 0,
         total_pending: parseInt(stats.total_pending) || 0,
         success_rate: stats.orders_today > 0 
           ? Math.round((parseInt(stats.successful_today) / parseInt(stats.orders_today)) * 100) 
@@ -206,6 +229,43 @@ export async function PUT(req: NextRequest) {
          WHERE orderid = $1 AND paymentstatus = 'pending'`,
         [order_id]
       );
+    }
+
+    // เมื่อเปลี่ยนเป็น "จัดส่งแล้ว" (shipped) ให้สุ่ม tracking number จาก TrackingNumber.txt และบันทึกลง shipments
+    if (order_status === 'shipped') {
+      const usedRes = await query(
+        `SELECT trackingnumber FROM shipments WHERE trackingnumber IS NOT NULL
+         UNION
+         SELECT trackingnumber FROM payments WHERE trackingnumber IS NOT NULL`,
+        []
+      );
+      const usedSet = new Set(
+        (usedRes.rows as { trackingnumber: string }[])
+          .map((r) => r.trackingnumber)
+          .filter(Boolean)
+      );
+
+      let trackingNumber: string | null = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const candidate = getRandomTrackingNumber();
+        if (candidate && !usedSet.has(candidate)) {
+          trackingNumber = candidate;
+          break;
+        }
+      }
+
+      if (trackingNumber) {
+        const updateRes = await query(
+          `UPDATE shipments SET deliverystatus = 'shipped', trackingnumber = $1, updateddate = CURRENT_TIMESTAMP WHERE orderid = $2`,
+          [trackingNumber, order_id]
+        );
+        if (updateRes.rowCount === 0) {
+          await query(
+            `INSERT INTO shipments (orderid, trackingnumber, deliverystatus) VALUES ($1, $2, 'shipped')`,
+            [order_id, trackingNumber]
+          );
+        }
+      }
     }
 
     return NextResponse.json({ ok: true });

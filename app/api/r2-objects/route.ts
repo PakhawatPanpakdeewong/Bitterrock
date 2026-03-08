@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, ListObjectsV2Command, type ListObjectsV2CommandOutput } from "@aws-sdk/client-s3";
 
 function createR2Client() {
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -48,14 +48,14 @@ export async function GET(req: NextRequest) {
     let continuationToken: string | undefined = undefined;
     
     do {
-      const command = new ListObjectsV2Command({
+      const command: InstanceType<typeof ListObjectsV2Command> = new ListObjectsV2Command({
         Bucket: bucket,
         Prefix: prefix,
         MaxKeys: allItems ? 1000 : maxKeys,
         ContinuationToken: continuationToken,
       });
       
-      const result = await client.send(command);
+      const result: ListObjectsV2CommandOutput = await client.send(command);
       if (result.Contents) {
         contents.push(...result.Contents);
       }

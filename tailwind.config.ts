@@ -19,7 +19,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        'sans': ['LineSeedSans', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-line-seed)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",

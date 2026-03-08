@@ -503,7 +503,7 @@ export default function UserPermissionsPage() {
                     className="pl-9 h-9 text-xs"
                   />
                 </div>
-                <Select value={selectedRole} onValueChange={(value) => {
+                <Select value={selectedRole} onValueChange={(value: string) => {
                   setSelectedRole(value);
                   setCurrentPage(1);
                 }}>
@@ -702,7 +702,7 @@ export default function UserPermissionsPage() {
           </div>
           <div>
             <Label htmlFor="role" className="text-sm font-semibold">บทบาท</Label>
-            <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value as UserRole })}>
+            <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}>
               <SelectTrigger className="text-sm h-9">
                 <SelectValue placeholder="เลือกบทบาท" />
               </SelectTrigger>
@@ -778,7 +778,7 @@ export default function UserPermissionsPage() {
               <Label htmlFor="edit-role" className="text-sm font-semibold">บทบาท</Label>
               <Select 
                 value={formData.role} 
-                onValueChange={(value) => setFormData({ ...formData, role: value as UserRole })}
+                onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}
                 disabled={currentUser?.id === selectedUser.id}
               >
                 <SelectTrigger className="text-sm h-9" disabled={currentUser?.id === selectedUser.id}>
@@ -798,11 +798,11 @@ export default function UserPermissionsPage() {
               <Label htmlFor="edit-status" className="text-sm font-semibold">สถานะ</Label>
               <Select 
                 value={selectedUser.status} 
-                onValueChange={(value) => {
-                  if (selectedUser) {
-                    setSelectedUser({ ...selectedUser, status: value as 'active' | 'inactive' });
-                  }
-                }}
+onValueChange={(value: string) => {
+                    if (selectedUser) {
+                      setSelectedUser({ ...selectedUser, status: value as 'active' | 'inactive' });
+                    }
+                  }}
               >
                 <SelectTrigger className="text-sm h-9">
                   <SelectValue />

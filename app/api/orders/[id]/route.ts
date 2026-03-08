@@ -26,6 +26,7 @@ export type OrderDetail = {
   customer_email: string;
   item_count: number;
   delivery_status: string;
+  tracking_number: string | null;
   items: OrderItemDetail[];
 };
 
@@ -68,7 +69,8 @@ export async function GET(
           WHEN o.orderstatus = 'shipped' THEN 'shipped'
           WHEN o.orderstatus = 'delivered' THEN 'shipped'
           ELSE 'pending'
-        END as delivery_status
+        END as delivery_status,
+        (SELECT s.trackingnumber FROM shipments s WHERE s.orderid = o.orderid ORDER BY s.shipmentid DESC LIMIT 1) as tracking_number
       FROM orders o
       JOIN customers c ON c.customerid = o.customerid
       LEFT JOIN order_items oi ON oi.orderid = o.orderid
@@ -124,6 +126,7 @@ export async function GET(
       customer_email: order.customer_email,
       item_count: itemCount,
       delivery_status: order.delivery_status,
+      tracking_number: order.tracking_number || null,
       items,
     };
 

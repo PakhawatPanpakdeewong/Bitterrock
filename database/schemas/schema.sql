@@ -225,6 +225,19 @@ CREATE TABLE IF NOT EXISTS Warehouses (
     Email VARCHAR(255)
 );
 
+-- Variant-specific reorder params (ROP/EOQ parameters per variant+warehouse)
+CREATE TABLE IF NOT EXISTS VariantReorderParams (
+    VariantID INTEGER NOT NULL REFERENCES ProductVariants(VariantID) ON DELETE CASCADE,
+    WarehouseID INTEGER NOT NULL REFERENCES Warehouses(WarehouseID) ON DELETE CASCADE,
+    DailyDemand DECIMAL(10,2) NOT NULL DEFAULT 5,
+    LeadTimeDays INTEGER NOT NULL DEFAULT 7,
+    SafetyStock INTEGER NOT NULL DEFAULT 10,
+    OrderingCost DECIMAL(10,2) NOT NULL DEFAULT 100,
+    HoldingCostPercent DECIMAL(5,2) NOT NULL DEFAULT 10,
+    UpdatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (VariantID, WarehouseID)
+);
+
 -- Payments table
 CREATE TABLE IF NOT EXISTS Payments (
     PaymentID SERIAL PRIMARY KEY,
@@ -347,6 +360,17 @@ CREATE TABLE IF NOT EXISTS StaffUsers (
     LastLogin TIMESTAMP WITH TIME ZONE
 );
 
+-- FetchLogs table for tracking failed fetch attempts (admin-only page at /fetch-logs)
+CREATE TABLE IF NOT EXISTS FetchLogs (
+    LogID SERIAL PRIMARY KEY,
+    Source VARCHAR(100) NOT NULL,
+    ResourceType VARCHAR(100) NOT NULL,
+    ResourceId VARCHAR(255),
+    ErrorMessage TEXT,
+    HttpStatus INTEGER,
+    CreatedAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_chat_contacts_platform_user_id ON ChatContacts(PlatformUserID);
 CREATE INDEX IF NOT EXISTS idx_chat_contacts_channel ON ChatContacts(Channel);
@@ -382,6 +406,8 @@ CREATE INDEX IF NOT EXISTS idx_discounts_minimum_order_amount ON Discounts(Minim
 CREATE INDEX IF NOT EXISTS idx_discounts_maximum_discount_amount ON Discounts(MaximumDiscountAmount);
 CREATE INDEX IF NOT EXISTS idx_discounts_start_date ON Discounts(StartDate);
 CREATE INDEX IF NOT EXISTS idx_discounts_end_date ON Discounts(EndDate);
+CREATE INDEX IF NOT EXISTS idx_fetch_logs_source ON FetchLogs(Source);
+CREATE INDEX IF NOT EXISTS idx_fetch_logs_created_at ON FetchLogs(CreatedAt DESC);
 
 
 -- Create triggers for updated_date

@@ -66,6 +66,7 @@ type OrderItemDetail = {
 
 type OrderDetail = Order & {
   items: OrderItemDetail[];
+  tracking_number?: string | null;
 };
 
 type OrderStats = {
@@ -872,6 +873,19 @@ export default function OrdersPage() {
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed">{orderDetail.shipping_address}</p>
                 </div>
+
+                {/* Tracking number */}
+                {orderDetail.tracking_number && (
+                  <div className="rounded-xl bg-green-50/80 p-4 border border-green-100">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                      <Package className="w-3.5 h-3.5" />
+                      เลขติดตามพัสดุ
+                    </div>
+                    <p className="text-sm font-semibold text-green-800">
+                      {orderDetail.tracking_number}
+                    </p>
+                  </div>
+                )}
 
                 {/* Total */}
                 <div className="flex items-center justify-between pt-2 border-t border-gray-100">

@@ -1,42 +1,28 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import localFont from 'next/font/local';
 import { AuthLayout } from '@/components/auth-layout';
 
-export const metadata: Metadata = { 
-  title: 'KiddyCare', 
+const lineSeedSans = localFont({
+  variable: '--font-line-seed',
+  display: 'swap',
+  src: [
+    { path: './fonts/LINESeedSansTH_W_Th.woff2', weight: '100', style: 'normal' },
+    { path: './fonts/LINESeedSansTH_W_Rg.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/LINESeedSansTH_W_Bd.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/LINESeedSansTH_W_He.woff2', weight: '800', style: 'normal' },
+    { path: './fonts/LINESeedSansTH_W_XBd.woff2', weight: '900', style: 'normal' },
+  ],
+});
+
+export const metadata: Metadata = {
+  title: 'KiddyCare',
   description: 'Baby Product Management System',
-  other: {
-    'font-preload': 'true',
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="font-sans">
-      <head>
-        {/* Preload critical font files for immediate loading */}
-        <link
-          rel="preload"
-          href="/fonts/LINESeedSansTH_W_Rg.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="preload"
-          href="/fonts/LINESeedSansTH_W_Bd.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="preload"
-          href="/fonts/LINESeedSansTH_W_Th.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
-      </head>
+    <html lang="en" className={lineSeedSans.variable}>
       <body className="min-h-screen bg-white text-gray-900 font-sans">
         <AuthLayout>{children}</AuthLayout>
       </body>

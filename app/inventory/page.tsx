@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +30,8 @@ import {
   ChevronLeft,
   X,
   FileSpreadsheet,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Modal } from '@/components/ui/modal';
@@ -115,8 +117,16 @@ type InventoryFormData = {
   expired_date: string;
 };
 
+type ReorderInfo = {
+  needs_reorder: boolean;
+  rop: number;
+  eoq: number;
+  suggested_order_qty: number;
+};
+
 export default function InventoryPage() {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [reorderMap, setReorderMap] = useState<Record<number, ReorderInfo>>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -239,19 +249,37 @@ export default function InventoryPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/inventory?limit=1000');
-      const data = await res.json();
-      
-      if (data.ok) {
-        console.log('Inventory data received:', data.items?.length || 0, 'items');
-        setInventoryItems(data.items || []);
+      const [invRes, reorderRes] = await Promise.all([
+        fetch('/api/inventory?limit=1000'),
+        fetch('/api/reorder?limit=1000'),
+      ]);
+      const invData = await invRes.json();
+      const reorderData = await reorderRes.json();
+
+      if (invData.ok) {
+        setInventoryItems(invData.items || []);
       } else {
-        console.error('Error fetching inventory:', data.error);
         setInventoryItems([]);
+      }
+
+      if (reorderData.ok && reorderData.items) {
+        const map: Record<number, ReorderInfo> = {};
+        for (const item of reorderData.items) {
+          map[item.inventory_id] = {
+            needs_reorder: item.needs_reorder,
+            rop: item.rop,
+            eoq: item.eoq,
+            suggested_order_qty: item.suggested_order_qty,
+          };
+        }
+        setReorderMap(map);
+      } else {
+        setReorderMap({});
       }
     } catch (error) {
       console.error('Error fetching data:', error);
       setInventoryItems([]);
+      setReorderMap({});
     } finally {
       setLoading(false);
     }
@@ -637,10 +665,10 @@ export default function InventoryPage() {
       'จำนวนสินค้าที่จอง': item.reserved_quantity,
       'จำนวนคงเหลือ': item.available_quantity,
       'ราคา': item.price ? item.price : '',
-      'สถานะสต็อก': item.available_quantity === 0 
-        ? 'ขาดสต็อก' 
-        : item.available_quantity <= 10 
-        ? 'สต็อกต่ำ' 
+      'สถานะสต็อก': item.available_quantity === 0
+        ? 'ขาดสต็อก'
+        : reorderMap[item.inventory_id]?.needs_reorder
+        ? 'ต้องเติมของ'
         : 'มีสินค้า',
       'สถานะการใช้งาน': item.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน',
       'คลังสินค้า': item.warehouse_name || '',
@@ -730,7 +758,7 @@ export default function InventoryPage() {
                   <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.reserved_quantity}</td>
                   <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.available_quantity}</td>
                   <td style="border: 1px solid #ddd; padding: 6px; text-align: right;">${item.price ? `฿${formatCurrency(item.price)}` : ''}</td>
-                  <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${item.available_quantity === 0 ? 'ขาดสต็อก' : item.available_quantity <= 10 ? 'สต็อกต่ำ' : 'มีสินค้า'}</td>
+                  <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${item.available_quantity === 0 ? 'ขาดสต็อก' : reorderMap[item.inventory_id]?.needs_reorder ? 'ต้องเติมของ' : 'มีสินค้า'}</td>
                   <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${item.is_active === true ? 'เปิดการขาย' : 'ไม่พร้อมใช้งาน'}</td>
                   <td style="border: 1px solid #ddd; padding: 6px;">${item.warehouse_name || ''}</td>
                 </tr>
@@ -741,7 +769,7 @@ export default function InventoryPage() {
             <p><strong>มูลค่ารวมทั้งหมด:</strong> ฿${formatCurrency(totalValue)}</p>
             <p><strong>จำนวนสินค้าในสต็อก:</strong> ${productsInStock}</p>
             <p><strong>สินค้าหมด:</strong> ${outOfStockCount} รายการ</p>
-            <p><strong>สินค้าใกล้หมด:</strong> ${lowStockCount} รายการ</p>
+            <p><strong>ต้องเติมของ (ROP):</strong> ${lowStockCount} รายการ</p>
           </div>
         </div>
       `;
@@ -797,12 +825,13 @@ export default function InventoryPage() {
     }
   };
 
-  // Calculate metrics
+  // Calculate metrics (lowStockCount ใช้ ROP จาก reorder)
   const totalValue = inventoryItems.reduce((sum, item) => sum + ((item.price || 0) * item.available_quantity), 0);
   const totalProducts = inventoryItems.length;
   const productsInStock = inventoryItems.filter(item => item.available_quantity > 0).reduce((sum, item) => sum + item.available_quantity, 0);
   const outOfStockCount = inventoryItems.filter(item => item.available_quantity === 0).length;
-  const lowStockCount = inventoryItems.filter(item => item.available_quantity > 0 && item.available_quantity <= 10).length;
+  const needReorderCount = inventoryItems.filter(item => reorderMap[item.inventory_id]?.needs_reorder).length;
+  const lowStockCount = needReorderCount; // ใช้ ROP-based จาก reorder
 
   // Filter items
   const filteredItems = inventoryItems.filter(item => {
@@ -813,10 +842,11 @@ export default function InventoryPage() {
     const matchesCategory = selectedCategory === 'all' || (item.sub_category_name && item.sub_category_name === selectedCategory);
     const matchesWarehouse = selectedWarehouse === 'all' || (item.warehouse_name && item.warehouse_name === selectedWarehouse);
     let matchesStatus = true;
+    const reorderInfo = reorderMap[item.inventory_id];
     if (selectedStatus === 'in_stock') {
-      matchesStatus = item.available_quantity > 10;
+      matchesStatus = item.available_quantity > 0 && !reorderInfo?.needs_reorder;
     } else if (selectedStatus === 'low_stock') {
-      matchesStatus = item.available_quantity > 0 && item.available_quantity <= 10;
+      matchesStatus = reorderInfo?.needs_reorder ?? false;
     } else if (selectedStatus === 'out_of_stock') {
       matchesStatus = item.available_quantity === 0;
     }
@@ -835,14 +865,15 @@ export default function InventoryPage() {
   // Get unique warehouses for filtering
   const filterWarehouses = Array.from(new Set(inventoryItems.map(item => item.warehouse_name).filter(Boolean) as string[]));
 
-  const getStatusBadge = (availableQuantity: number) => {
-    if (availableQuantity === 0) {
+  const getStatusBadge = (item: InventoryItem) => {
+    const reorderInfo = reorderMap[item.inventory_id];
+    if (item.available_quantity === 0) {
       return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-red-100 text-red-800">ขาดสต็อก</span>;
-    } else if (availableQuantity <= 10) {
-      return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-orange-100 text-orange-800">สต็อกต่ำ</span>;
-    } else {
-      return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">มีสินค้า</span>;
     }
+    if (reorderInfo?.needs_reorder) {
+      return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-orange-100 text-orange-800">ต้องเติมของ</span>;
+    }
+    return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">มีสินค้า</span>;
   };
 
   const getActiveStatusBadge = (isActive: boolean | null) => {
@@ -853,9 +884,10 @@ export default function InventoryPage() {
     }
   };
 
-  const getQuantityColor = (quantity: number, availableQuantity: number) => {
-    if (availableQuantity === 0) return 'text-red-600 font-semibold';
-    if (availableQuantity <= 10) return 'text-orange-600 font-semibold';
+  const getQuantityColor = (item: InventoryItem) => {
+    const reorderInfo = reorderMap[item.inventory_id];
+    if (item.available_quantity === 0) return 'text-red-600 font-semibold';
+    if (reorderInfo?.needs_reorder) return 'text-orange-600 font-semibold';
     return 'text-gray-900';
   };
 
@@ -915,6 +947,12 @@ export default function InventoryPage() {
                 <FileText className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">ส่งออก PDF</span>
               </Button>
+              <Link href="/reorder">
+                <Button variant="outline" size="sm" className="h-8 flex items-center gap-1.5 text-xs px-2">
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">เติมของ</span>
+                </Button>
+              </Link>
               <Button 
                 className="bg-pink-500 hover:bg-pink-600 text-white h-8 flex items-center gap-1.5 text-xs px-2"
                 onClick={handleOpenModal}
@@ -980,37 +1018,41 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
 
-          {/* Out of Stock Card */}
-          <Card>
-                      <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">สินค้าหมด</p>
-                  <p className="text-lg font-bold text-gray-900">{outOfStockCount}</p>
-                  <p className="text-[0.65rem] text-red-600 mt-1">ต้องเติมสต็อกสินค้าด่วน</p>
-                          </div>
-                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+          {/* Out of Stock Card - ลิงก์ไปหน้าเติมของ */}
+          <Link href="/reorder">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">สินค้าหมด</p>
+                    <p className="text-lg font-bold text-gray-900">{outOfStockCount}</p>
+                    <p className="text-[0.65rem] text-red-600 mt-1">ต้องเติมสต็อกสินค้าด่วน</p>
+                  </div>
+                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
 
-          {/* Low Stock Card */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">สินค้าใกล้หมด</p>
-                  <p className="text-lg font-bold text-gray-900">{lowStockCount}</p>
-                  <p className="text-[0.65rem] text-orange-600 mt-1">ต้องเติมสต็อกสินค้า</p>
+          {/* Low Stock / ต้องเติมของ Card - ลิงก์ไปหน้าเติมของ (ใช้ ROP) */}
+          <Link href="/reorder">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">ต้องเติมของ (ROP)</p>
+                    <p className="text-lg font-bold text-orange-600">{lowStockCount}</p>
+                    <p className="text-[0.65rem] text-orange-600 mt-1">ดูคำแนะนำการสั่งซื้อ</p>
+                  </div>
+                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <RotateCcw className="w-5 h-5 text-orange-600" />
+                  </div>
                 </div>
-                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-orange-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
       </div>
 
         {/* Inventory Table Section */}
@@ -1058,7 +1100,7 @@ export default function InventoryPage() {
                 <SelectContent>
                   <SelectItem value="all">ทุกสถานะ</SelectItem>
                   <SelectItem value="in_stock">มีสินค้า</SelectItem>
-                  <SelectItem value="low_stock">สต็อกต่ำ</SelectItem>
+                  <SelectItem value="low_stock">ต้องเติมของ</SelectItem>
                   <SelectItem value="out_of_stock">ขาดสต็อก</SelectItem>
                 </SelectContent>
               </Select>
@@ -1099,6 +1141,7 @@ export default function InventoryPage() {
                       <TH className="w-[120px] text-xs">จำนวนคงเหลือ</TH>
                       <TH className="w-[120px] text-xs">ราคา</TH>
                       <TH className="w-[120px] text-xs">สถานะ</TH>
+                      <TH className="w-[100px] text-xs">แนะนำสั่งซื้อ</TH>
                       <TH className="w-[120px] text-xs">สถานะการใช้งาน</TH>
                       <TH className="w-[180px] text-xs">วันที่นำเข้าคลัง</TH>
                       <TH className="w-[200px] text-xs">การดำเนินการ</TH>
@@ -1120,7 +1163,7 @@ export default function InventoryPage() {
                           <div className="text-xs text-gray-600">{item.attribute_value_th || 'N/A'}</div>
                         </TD>
                         <TD>
-                          <div className={`text-xs ${getQuantityColor(item.stock_quantity, item.available_quantity)}`}>
+                          <div className={`text-xs ${getQuantityColor(item)}`}>
                             {item.available_quantity}
                           </div>
                         </TD>
@@ -1130,7 +1173,16 @@ export default function InventoryPage() {
                           </div>
                         </TD>
                         <TD>
-                          {getStatusBadge(item.available_quantity)}
+                          {getStatusBadge(item)}
+                        </TD>
+                        <TD>
+                          {reorderMap[item.inventory_id]?.needs_reorder ? (
+                            <Link href="/reorder" className="text-xs font-medium text-orange-600 hover:underline">
+                              {reorderMap[item.inventory_id].suggested_order_qty} หน่วย
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
                         </TD>
                         <TD>
                           {getActiveStatusBadge(item.is_active)}
@@ -1903,7 +1955,7 @@ export default function InventoryPage() {
               <div className="mt-3 pt-3 border-t border-green-200">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-green-700">สถานะ:</span>
-                  {getStatusBadge(selectedItem.available_quantity)}
+                  {selectedItem && getStatusBadge(selectedItem)}
                   <span className="ml-4 text-xs text-green-700">สถานะการใช้งาน:</span>
                   {getActiveStatusBadge(selectedItem.is_active)}
                 </div>
