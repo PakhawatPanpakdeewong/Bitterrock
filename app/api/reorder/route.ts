@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
+import { calcROP, calcEOQ } from '@/lib/reorder-calc';
 
 const DEFAULT_PARAMS = {
   daily_demand: 5,
@@ -8,21 +9,6 @@ const DEFAULT_PARAMS = {
   ordering_cost: 100,
   holding_cost_percent: 10,
 };
-
-function calcROP(dailyDemand: number, leadTime: number, safetyStock: number): number {
-  return Math.ceil(dailyDemand * leadTime + safetyStock);
-}
-
-function calcEOQ(
-  dailyDemand: number,
-  orderingCost: number,
-  holdingCostPerUnit: number
-): number {
-  const annualDemand = dailyDemand * 365;
-  if (holdingCostPerUnit <= 0) return Math.ceil(annualDemand);
-  const eoq = Math.sqrt((2 * annualDemand * orderingCost) / holdingCostPerUnit);
-  return Math.ceil(Math.max(1, eoq));
-}
 
 export async function GET(req: NextRequest) {
   try {

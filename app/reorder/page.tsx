@@ -22,6 +22,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
+import { useNotification } from '@/components/ui/notification';
 import { Label } from '@/components/ui/label';
 
 type ReorderItem = {
@@ -254,6 +255,7 @@ function SettingsModalContent({
 }
 
 export default function ReorderPage() {
+  const { notify } = useNotification();
   const [items, setItems] = useState<ReorderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -339,11 +341,11 @@ export default function ReorderPage() {
         await fetchData();
         closeSettingsModal();
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error saving params:', error);
-      alert('เกิดข้อผิดพลาดในการบันทึก');
+      notify('เกิดข้อผิดพลาดในการบันทึก', { type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -360,11 +362,11 @@ export default function ReorderPage() {
       if (data.ok) {
         await fetchData();
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error resetting params:', error);
-      alert('เกิดข้อผิดพลาดในการรีเซ็ต');
+      notify('เกิดข้อผิดพลาดในการรีเซ็ต', { type: 'error' });
     }
   };
 

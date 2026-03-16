@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
+import { getCurrentUser } from '@/lib/auth';
+import { logStaffActivity } from '@/database/activity-log';
 
 type DbDiscount = {
   discount_id: number;
@@ -82,6 +84,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const {
       discount_code,
@@ -144,6 +154,27 @@ export async function POST(req: NextRequest) {
     );
 
     const row = res.rows[0];
+
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'create_discount',
+      resourceType: 'discount',
+      resourceId: row?.discount_id,
+      ipAddress: ip,
+      details: {
+        discount_code: String(discount_code).trim().toUpperCase(),
+        discount_type,
+        discount_value: Number(discount_value),
+        minimum_order_amount: Number(minimum_order_amount),
+        maximum_discount_amount: maximum_discount_amount != null ? Number(maximum_discount_amount) : null,
+        start_date,
+        end_date,
+        usage_limit: usage_limit != null ? Number(usage_limit) : null,
+        is_active: Boolean(is_active),
+      },
+    });
+
     return NextResponse.json({ ok: true, discount_id: row?.discount_id });
   } catch (error: unknown) {
     console.error('Error creating discount:', error);

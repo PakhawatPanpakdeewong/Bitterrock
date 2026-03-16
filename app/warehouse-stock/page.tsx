@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { Label } from '@/components/ui/label';
+import { useNotification } from '@/components/ui/notification';
 import { Textarea } from '@/components/ui/input';
 
 type Warehouse = {
@@ -66,6 +67,7 @@ type InventoryItem = {
 };
 
 export default function WarehouseStockPage() {
+  const { notify } = useNotification();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -298,11 +300,11 @@ export default function WarehouseStockPage() {
           handleCloseAddModal();
         }
       } else {
-        alert(data.error || 'เกิดข้อผิดพลาด');
+        notify(data.error || 'เกิดข้อผิดพลาด', { type: 'error' });
       }
     } catch (error) {
       console.error('Error saving warehouse:', error);
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      notify('เกิดข้อผิดพลาดในการบันทึกข้อมูล', { type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -313,7 +315,10 @@ export default function WarehouseStockPage() {
 
     // Double check inventory count before deleting
     if (inventoryCount !== null && inventoryCount > 0) {
-      alert(`ไม่สามารถลบคลังสินค้าได้ เนื่องจากมีสินค้า ${inventoryCount} รายการในคลังสินค้านี้ กรุณาลบหรือย้ายสินค้าออกก่อน`);
+      notify(
+        `ไม่สามารถลบคลังสินค้าได้ เนื่องจากมีสินค้า ${inventoryCount} รายการในคลังสินค้านี้ กรุณาลบหรือย้ายสินค้าออกก่อน`,
+        { type: 'warning' }
+      );
       return;
     }
 
@@ -331,14 +336,17 @@ export default function WarehouseStockPage() {
       } else {
         // Check if it's a conflict error (has inventory)
         if (res.status === 409) {
-          alert(data.error || data.details || 'ไม่สามารถลบคลังสินค้าได้ เนื่องจากมีสินค้าอยู่ในคลังสินค้านี้');
+          notify(
+            data.error || data.details || 'ไม่สามารถลบคลังสินค้าได้ เนื่องจากมีสินค้าอยู่ในคลังสินค้านี้',
+            { type: 'warning' }
+          );
         } else {
-          alert(data.error || 'เกิดข้อผิดพลาด');
+          notify(data.error || 'เกิดข้อผิดพลาด', { type: 'error' });
         }
       }
     } catch (error) {
       console.error('Error deleting warehouse:', error);
-      alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+      notify('เกิดข้อผิดพลาดในการลบข้อมูล', { type: 'error' });
     } finally {
       setDeleting(false);
     }

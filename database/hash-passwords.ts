@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import path from 'path';
 import { query, closePool } from './db';
+import { isBcryptHash } from './password-utils';
 
 // Load environment variables
 const envPaths = [
@@ -38,11 +39,7 @@ async function hashAllPasswords() {
       const email = user.email;
       const currentPassword = user.passwordhash;
 
-      // Check if password is already a bcrypt hash (starts with $2a$, $2b$, or $2y$)
-      if (currentPassword && (
-          currentPassword.startsWith('$2a$') || 
-          currentPassword.startsWith('$2b$') || 
-          currentPassword.startsWith('$2y$'))) {
+      if (isBcryptHash(currentPassword)) {
         console.log(`User ${email} already has hashed password, skipping...`);
         skippedCount++;
         continue;

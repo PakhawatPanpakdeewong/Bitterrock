@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import { AuthLayout } from '@/components/auth-layout';
+import { NotificationProvider } from '@/components/ui/notification';
 
 const lineSeedSans = localFont({
   variable: '--font-line-seed',
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={lineSeedSans.variable}>
       <body className="min-h-screen bg-white text-gray-900 font-sans">
-        <AuthLayout>{children}</AuthLayout>
+        <NotificationProvider>
+          <AuthLayout>{children}</AuthLayout>
+        </NotificationProvider>
       </body>
     </html>
   );

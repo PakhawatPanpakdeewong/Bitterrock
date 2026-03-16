@@ -24,6 +24,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
+import { useNotification } from '@/components/ui/notification';
 
 type Review = {
   review_id: number;
@@ -48,6 +49,7 @@ type ReviewStats = {
 };
 
 export default function ReviewsPage() {
+  const { notify } = useNotification();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,11 +85,11 @@ export default function ReviewsPage() {
         setReviews(data.items);
         setStats(data.stats);
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error fetching reviews:', error);
-      alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+      notify('เกิดข้อผิดพลาดในการโหลดข้อมูล', { type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -113,13 +115,13 @@ export default function ReviewsPage() {
       const data = await res.json();
       if (data.ok) {
         await fetchReviews();
-        alert('อนุมัติรีวิวเรียบร้อยแล้ว');
+        notify('อนุมัติรีวิวเรียบร้อยแล้ว', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error approving review:', error);
-      alert('เกิดข้อผิดพลาดในการอนุมัติรีวิว');
+      notify('เกิดข้อผิดพลาดในการอนุมัติรีวิว', { type: 'error' });
     } finally {
       setUpdatingId(null);
     }
@@ -147,13 +149,13 @@ export default function ReviewsPage() {
       const data = await res.json();
       if (data.ok) {
         await fetchReviews();
-        alert('ยกเลิกการอนุมัติรีวิวเรียบร้อยแล้ว');
+        notify('ยกเลิกการอนุมัติรีวิวเรียบร้อยแล้ว', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error rejecting review:', error);
-      alert('เกิดข้อผิดพลาด');
+      notify('เกิดข้อผิดพลาด', { type: 'error' });
     } finally {
       setUpdatingId(null);
     }

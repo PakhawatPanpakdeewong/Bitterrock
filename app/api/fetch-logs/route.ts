@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isAdmin } from '@/lib/auth';
+import { parseLimitOffset } from '@/lib/pagination';
 import { query } from '@/database/connection';
 
 export async function GET(req: NextRequest) {
@@ -8,13 +9,16 @@ export async function GET(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
-    if (user.StaffRole.toLowerCase() !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ ok: false, error: 'Forbidden: Admin only' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 500);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const { limit, offset } = parseLimitOffset(
+      searchParams.get('limit'),
+      searchParams.get('offset'),
+      { maxLimit: 500, defaultLimit: 100, defaultOffset: 0 }
+    );
     const source = searchParams.get('source') || undefined;
 
     let sql = `

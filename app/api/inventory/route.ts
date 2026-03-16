@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
+import { getCurrentUser } from '@/lib/auth';
+import { logStaffActivity } from '@/database/activity-log';
 
 type DbInventory = {
   inventory_id: number;
@@ -117,6 +119,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
     const {
       variant_id,
@@ -153,6 +160,24 @@ export async function POST(req: NextRequest) {
     );
 
     const newId = insertRes.rows[0]?.inventory_id;
+
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'add_inventory',
+      resourceType: 'inventory',
+      resourceId: newId,
+      ipAddress: ip,
+      details: {
+        variant_id,
+        warehouse_id,
+        stock_quantity: stockQty,
+        reserved_quantity: reservedQty,
+        available_quantity: availableQuantity,
+        expired_date,
+      },
+    });
+
     return NextResponse.json({ ok: true, id: newId });
   } catch (error: any) {
     console.error('Error creating inventory:', error);
@@ -163,6 +188,11 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { inventory_id, stock_quantity, reserved_quantity, expired_date, is_active } = body;
 
@@ -228,6 +258,21 @@ export async function PUT(req: NextRequest) {
     values.push(inventory_id);
     const sql = `UPDATE inventories SET ${fields.join(', ')} WHERE inventoryid = $${idx}`;
     await query(sql, values);
+
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'update_inventory',
+      resourceType: 'inventory',
+      resourceId: inventory_id,
+      ipAddress: ip,
+      details: {
+        stock_quantity,
+        reserved_quantity,
+        expired_date,
+        is_active,
+      },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {

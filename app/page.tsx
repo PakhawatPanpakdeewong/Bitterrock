@@ -12,6 +12,7 @@ import {
   ShoppingCart,
   Calendar
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/format';
 
 type InventoryItem = {
   inventory_id: number;
@@ -108,13 +109,6 @@ export default function HomePage() {
   const outOfStockCount = inventoryItems.filter(item => item.available_quantity === 0).length;
   const lowStockCount = needReorderCount; // ใช้ ROP จาก reorder
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('th-TH', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-6 py-6">
@@ -125,23 +119,6 @@ export default function HomePage() {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Total Value Card */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">มูลค่ารวมทั้งหมด</p>
-                  <p className="text-lg font-bold text-gray-900">
-                    {loading ? '...' : `฿${formatCurrency(totalValue)}`}
-                  </p>
-                </div>
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <DollarSign className="w-5 h-5 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Total Products Card */}
           <Card>
             <CardContent className="p-4">

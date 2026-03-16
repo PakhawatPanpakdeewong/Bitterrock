@@ -36,6 +36,7 @@ import {
 import * as XLSX from 'xlsx';
 import { Modal } from '@/components/ui/modal';
 import { Label } from '@/components/ui/label';
+import { useNotification } from '@/components/ui/notification';
 
 // Data types from API
 type InventoryItem = {
@@ -125,6 +126,7 @@ type ReorderInfo = {
 };
 
 export default function InventoryPage() {
+  const { notify } = useNotification();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [reorderMap, setReorderMap] = useState<Record<number, ReorderInfo>>({});
   const [loading, setLoading] = useState(true);
@@ -506,13 +508,13 @@ export default function InventoryPage() {
         // Refresh inventory data
         await fetchData();
         handleCloseModal();
-        alert('เพิ่มสินค้าในสต็อกสำเร็จ');
+        notify('เพิ่มสินค้าในสต็อกสำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error submitting inventory:', error);
-      alert('เกิดข้อผิดพลาดในการเพิ่มสินค้าในสต็อก');
+      notify('เกิดข้อผิดพลาดในการเพิ่มสินค้าในสต็อก', { type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -524,7 +526,10 @@ export default function InventoryPage() {
   const handleDeleteClick = (item: InventoryItem) => {
     // Check if item is active (not "ไม่พร้อมใช้งาน")
     if (item.is_active === true) {
-      alert('ไม่สามารถลบสต็อกสินค้านี้ได้ เนื่องจากสถานะการใช้งานเป็น "เปิดการขาย" กรุณาเปลี่ยนสถานะเป็น "ไม่พร้อมใช้งาน" ก่อนลบ');
+      notify(
+        'ไม่สามารถลบสต็อกสินค้านี้ได้ เนื่องจากสถานะการใช้งานเป็น "เปิดการขาย" กรุณาเปลี่ยนสถานะเป็น "ไม่พร้อมใช้งาน" ก่อนลบ',
+        { type: 'warning' }
+      );
       return;
     }
     setItemToDelete(item);
@@ -547,13 +552,13 @@ export default function InventoryPage() {
         await fetchData();
         setIsDeleteModalOpen(false);
         setItemToDelete(null);
-        alert('ลบสินค้าในสต็อกสำเร็จ');
+        notify('ลบสินค้าในสต็อกสำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error deleting inventory:', error);
-      alert('เกิดข้อผิดพลาดในการลบสินค้าในสต็อก');
+      notify('เกิดข้อผิดพลาดในการลบสินค้าในสต็อก', { type: 'error' });
     } finally {
       setDeleting(false);
     }
@@ -639,13 +644,13 @@ export default function InventoryPage() {
       if (data.ok) {
         await fetchData();
         handleCloseEdit();
-        alert('แก้ไขสต็อกสินค้าสำเร็จ');
+        notify('แก้ไขสต็อกสินค้าสำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error updating inventory:', error);
-      alert('เกิดข้อผิดพลาดในการแก้ไขสต็อกสินค้า');
+      notify('เกิดข้อผิดพลาดในการแก้ไขสต็อกสินค้า', { type: 'error' });
     } finally {
       setEditSubmitting(false);
     }
@@ -821,7 +826,10 @@ export default function InventoryPage() {
       pdf.save(filename);
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      alert('เกิดข้อผิดพลาดในการส่งออก PDF: ' + (error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'));
+      notify(
+        'เกิดข้อผิดพลาดในการส่งออก PDF: ' + (error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'),
+        { type: 'error' }
+      );
     }
   };
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
+import { getCurrentUser } from '@/lib/auth';
+import { logStaffActivity } from '@/database/activity-log';
 import { S3Client, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 type DbProduct = {
@@ -167,6 +169,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
     console.log('🔍 DEBUG: Received POST request body:', body);
     const {
@@ -226,6 +233,22 @@ export async function POST(req: NextRequest) {
 
       const newId = insertRes.rows[0]?.product_id;
       console.log('✅ SUCCESS: Product inserted with ID:', newId);
+
+      const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+      await logStaffActivity({
+        user,
+        actionType: 'create_product',
+        resourceType: 'product',
+        resourceId: newId,
+        ipAddress: ip,
+        details: {
+          brand_id: coercedBrandId,
+          sub_category_id: coercedSubCategoryId,
+          product_name_th,
+          product_name_en,
+        },
+      });
+
       return NextResponse.json({ ok: true, id: newId });
     } catch (dbError: any) {
       console.error('❌ DATABASE ERROR:', dbError);

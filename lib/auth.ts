@@ -10,6 +10,11 @@ export interface StaffUser {
   StaffStatus: string;
 }
 
+/** ใช้ตรวจสิทธิ์ admin (เช่น API fetch-logs, user-permissions) */
+export function isAdmin(user: StaffUser): boolean {
+  return user.StaffRole.toLowerCase() === 'admin';
+}
+
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }

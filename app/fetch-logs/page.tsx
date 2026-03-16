@@ -12,6 +12,7 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { FileWarning, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useNotification } from '@/components/ui/notification';
 
 type FetchLogItem = {
   id: number;
@@ -24,6 +25,7 @@ type FetchLogItem = {
 };
 
 export default function FetchLogsPage() {
+  const { notify } = useNotification();
   const [logs, setLogs] = useState<FetchLogItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -76,11 +78,11 @@ export default function FetchLogsPage() {
           window.location.href = '/';
           return;
         }
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error fetching logs:', error);
-      alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+      notify('เกิดข้อผิดพลาดในการโหลดข้อมูล', { type: 'error' });
     } finally {
       setLoading(false);
     }

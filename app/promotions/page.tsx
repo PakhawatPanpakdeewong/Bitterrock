@@ -24,6 +24,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
+import { useNotification } from '@/components/ui/notification';
 import { Label } from '@/components/ui/label';
 
 type Discount = {
@@ -66,6 +67,7 @@ const emptyForm: FormData = {
 };
 
 export default function PromotionsPage() {
+  const { notify } = useNotification();
   const [items, setItems] = useState<Discount[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -227,11 +229,11 @@ export default function PromotionsPage() {
         setSelectedItem(null);
         fetchData();
       } else {
-        alert(data.error || 'ไม่สามารถลบได้');
+        notify(data.error || 'ไม่สามารถลบได้', { type: 'error' });
       }
     } catch (error) {
       console.error('Error deleting discount:', error);
-      alert('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      notify('เกิดข้อผิดพลาด กรุณาลองใหม่', { type: 'error' });
     } finally {
       setDeleting(false);
     }
@@ -277,133 +279,305 @@ export default function PromotionsPage() {
   const totalPages = Math.ceil(total / itemsPerPage) || 1;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-6 py-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">โปรโมชั่นและการลดราคา</h1>
-          <p className="text-sm text-gray-600">จัดการรหัสส่วนลดและโปรโมชั่นต่างๆ</p>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
+              โปรโมชั่นและการลดราคา
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              จัดการโค้ดส่วนลดและแคมเปญโปรโมชั่นสำหรับร้านของคุณ
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchData}
+              disabled={loading}
+              className="gap-1"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              รีเฟรช
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+              onClick={() => {
+                setFormData(emptyForm);
+                setFormErrors({});
+                setIsAddModalOpen(true);
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              เพิ่มโปรโมชั่นใหม่
+            </Button>
+          </div>
         </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Tag className="w-5 h-5 text-amber-600" />
-              รายการโปรโมชั่น
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="ค้นหารหัสโปรโมชั่น..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
+        <Card className="border-none shadow-sm">
+          <CardHeader className="space-y-4 pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50">
+                  <Tag className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-base md:text-lg font-semibold text-slate-900">
+                    รายการโปรโมชั่นทั้งหมด
+                  </CardTitle>
+                  <p className="text-xs text-slate-500">
+                    สร้าง แก้ไข และติดตามการใช้งานรหัสส่วนลด
+                  </p>
+                </div>
+              </div>
+              <div className="hidden md:flex items-center gap-2">
+                <span className="text-xs text-slate-500 border border-dashed border-slate-200 rounded-full px-3 py-1">
+                  ใช้งานอยู่ {items.filter((i) => i.is_active).length} รายการ
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+              <div className="flex flex-1 gap-2">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input
+                    placeholder="ค้นหารหัสโปรโมชั่น หรือชื่อโค้ด..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="pl-9 bg-slate-50/60 border-slate-200 focus:bg-white"
+                  />
+                </div>
+                <Select
+                  value={filterActive}
+                  onValueChange={(v: string) => {
+                    setFilterActive(v);
                     setCurrentPage(1);
                   }}
-                  className="pl-9 w-48"
-                />
+                >
+                  <SelectTrigger className="w-32 bg-slate-50/60 border-slate-200">
+                    <SelectValue placeholder="สถานะ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">ทั้งหมด</SelectItem>
+                    <SelectItem value="true">ใช้งาน</SelectItem>
+                    <SelectItem value="false">ปิดใช้งาน</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Select value={filterActive} onValueChange={(v: string) => { setFilterActive(v); setCurrentPage(1); }}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="สถานะ" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">ทั้งหมด</SelectItem>
-                  <SelectItem value="true">ใช้งาน</SelectItem>
-                  <SelectItem value="false">ปิดใช้งาน</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </Button>
-              <Button size="sm" onClick={() => { setFormData(emptyForm); setFormErrors({}); setIsAddModalOpen(true); }}>
-                <Plus className="w-4 h-4 mr-1" />
-                เพิ่มโปรโมชั่น
-              </Button>
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                <div className="inline-flex items-center gap-1">
+                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                  <span>ใช้งาน</span>
+                </div>
+                <div className="inline-flex items-center gap-1">
+                  <span className="inline-block h-2 w-2 rounded-full bg-slate-300" />
+                  <span>ปิดใช้งาน</span>
+                </div>
+              </div>
             </div>
           </CardHeader>
-          <CardContent>
+
+          <CardContent className="pt-0">
             {loading ? (
-              <div className="py-12 text-center text-gray-500">กำลังโหลด...</div>
+              <div className="py-14 flex flex-col items-center justify-center text-slate-500">
+                <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
+                  <RefreshCw className="w-5 h-5 animate-spin text-slate-500" />
+                </div>
+                <p className="text-sm font-medium">กำลังโหลดข้อมูลโปรโมชั่น...</p>
+              </div>
             ) : items.length === 0 ? (
-              <div className="py-12 text-center text-gray-500">ไม่พบโปรโมชั่น</div>
+              <div className="py-14 flex flex-col items-center justify-center text-center">
+                <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
+                  <Hash className="w-5 h-5 text-slate-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-800">ยังไม่มีโปรโมชั่น</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  เริ่มต้นสร้างโค้ดส่วนลดชุดแรกเพื่อกระตุ้นการสั่งซื้อ
+                </p>
+                <Button
+                  className="mt-4 gap-1"
+                  size="sm"
+                  onClick={() => {
+                    setFormData(emptyForm);
+                    setFormErrors({});
+                    setIsAddModalOpen(true);
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                  เพิ่มโปรโมชั่น
+                </Button>
+              </div>
             ) : (
               <>
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>รหัส</TH>
-                      <TH>มูลค่า</TH>
-                      <TH>ยอดขั้นต่ำ</TH>
-                      <TH>วันเริ่ม-สิ้นสุด</TH>
-                      <TH>ใช้แล้ว/จำกัด</TH>
-                      <TH>สถานะ</TH>
-                      <TH className="text-right">จัดการ</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {items.map((item) => (
-                      <TR key={item.discount_id}>
-                        <TD className="font-mono font-medium">{item.discount_code}</TD>
-                        <TD>
-                          {item.discount_type === 'percentage'
-                            ? `${formatCurrency(item.discount_value)}%`
-                            : `฿${formatCurrency(item.discount_value)}`}
-                        </TD>
-                        <TD>฿{formatCurrency(item.minimum_order_amount)}</TD>
-                        <TD className="text-xs">
-                          {formatDate(item.start_date)} - {formatDate(item.end_date)}
-                        </TD>
-                        <TD>
-                          {item.used_count}
-                          {item.usage_limit != null ? ` / ${item.usage_limit}` : ' / ∞'}
-                        </TD>
-                        <TD>
-                          <span
-                            className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                              item.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {item.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
-                          </span>
-                        </TD>
-                        <TD className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openEditModal(item)}>
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => openDeleteModal(item)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TD>
+                <div className="overflow-x-auto rounded-lg border border-slate-100">
+                  <Table>
+                    <THead>
+                      <TR className="bg-slate-50/80">
+                        <TH className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          รหัส
+                        </TH>
+                        <TH className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          มูลค่าส่วนลด
+                        </TH>
+                        <TH className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          ยอดขั้นต่ำ
+                        </TH>
+                        <TH className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          วันเริ่ม - สิ้นสุด
+                        </TH>
+                        <TH className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          ใช้แล้ว / จำกัด
+                        </TH>
+                        <TH className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          สถานะ
+                        </TH>
+                        <TH className="text-right text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          จัดการ
+                        </TH>
                       </TR>
-                    ))}
-                  </TBody>
-                </Table>
+                    </THead>
+                    <TBody>
+                      {items.map((item) => {
+                        const isExpired = new Date(item.end_date) < new Date();
+                        const isNearlyFull =
+                          item.usage_limit != null &&
+                          item.usage_limit > 0 &&
+                          item.used_count / item.usage_limit >= 0.8;
+
+                        return (
+                          <TR
+                            key={item.discount_id}
+                            className="hover:bg-slate-50/80 transition-colors"
+                          >
+                            <TD className="align-middle">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-mono text-sm font-semibold text-slate-900">
+                                  {item.discount_code}
+                                </span>
+                                <span className="text-[0.7rem] text-slate-500">
+                                  สร้างเมื่อ {formatDate(item.created_date)}
+                                </span>
+                              </div>
+                            </TD>
+                            <TD className="align-middle">
+                              <div className="flex items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                  <Percent className="w-3 h-3" />
+                                  {item.discount_type === 'percentage'
+                                    ? `${formatCurrency(item.discount_value)}%`
+                                    : `฿${formatCurrency(item.discount_value)}`}
+                                </span>
+                                {item.maximum_discount_amount != null && (
+                                  <span className="text-[0.7rem] text-slate-500">
+                                    สูงสุด ฿{formatCurrency(item.maximum_discount_amount)}
+                                  </span>
+                                )}
+                              </div>
+                            </TD>
+                            <TD className="align-middle text-sm text-slate-800">
+                              ฿{formatCurrency(item.minimum_order_amount)}
+                            </TD>
+                            <TD className="align-middle text-xs text-slate-700">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="inline-flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  {formatDate(item.start_date)}
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  {formatDate(item.end_date)}
+                                </span>
+                              </div>
+                            </TD>
+                            <TD className="align-middle text-sm text-slate-800">
+                              <div className="flex flex-col gap-0.5">
+                                <span>
+                                  {item.used_count}
+                                  {item.usage_limit != null ? ` / ${item.usage_limit}` : ' / ∞'}
+                                </span>
+                                {isNearlyFull && !isExpired && (
+                                  <span className="inline-flex w-fit rounded-full bg-amber-50 px-2 py-0.5 text-[0.7rem] font-medium text-amber-700">
+                                    ใกล้เต็มโควตา
+                                  </span>
+                                )}
+                              </div>
+                            </TD>
+                            <TD className="align-middle">
+                              <div className="flex flex-col gap-0.5">
+                                <span
+                                  className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[0.7rem] font-medium ${
+                                    item.is_active && !isExpired
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${
+                                      item.is_active && !isExpired
+                                        ? 'bg-emerald-500'
+                                        : 'bg-slate-400'
+                                    }`}
+                                  />
+                                  {isExpired ? 'หมดอายุแล้ว' : item.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
+                                </span>
+                              </div>
+                            </TD>
+                            <TD className="align-middle text-right">
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                                  onClick={() => openEditModal(item)}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                                  onClick={() => openDeleteModal(item)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TD>
+                          </TR>
+                        );
+                      })}
+                    </TBody>
+                  </Table>
+                </div>
 
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4">
-                    <p className="text-sm text-gray-600">
-                      แสดง {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, total)} จาก {total} รายการ
+                  <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <p className="text-xs md:text-sm text-slate-500">
+                      แสดง {(currentPage - 1) * itemsPerPage + 1} -{' '}
+                      {Math.min(currentPage * itemsPerPage, total)} จาก {total} รายการ
                     </p>
-                    <div className="flex gap-2">
+                    <div className="inline-flex items-center gap-2 self-end md:self-auto">
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-8 border-slate-200 text-slate-700"
                         disabled={currentPage <= 1}
                         onClick={() => setCurrentPage((p) => p - 1)}
                       >
                         ก่อนหน้า
                       </Button>
+                      <span className="text-xs text-slate-500">
+                        หน้า {currentPage} / {totalPages}
+                      </span>
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-8 border-slate-200 text-slate-700"
                         disabled={currentPage >= totalPages}
                         onClick={() => setCurrentPage((p) => p + 1)}
                       >

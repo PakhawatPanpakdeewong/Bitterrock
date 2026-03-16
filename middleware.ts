@@ -1,32 +1,16 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getMiddlewareAction } from '@/lib/middleware-auth';
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = request.cookies.get('session');
   const userId = request.cookies.get('userId');
+  const action = getMiddlewareAction(pathname, !!session?.value, !!userId?.value);
 
-  // Public routes that don't require authentication
-  const publicRoutes = ['/login'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
-
-  // If user is on login page and already authenticated, redirect to home
-  if (pathname === '/login' && session && userId) {
-    return NextResponse.redirect(new URL('/', request.url));
+  if (action.type === 'redirect') {
+    return NextResponse.redirect(new URL(action.to, request.url));
   }
-
-  // If user is trying to access protected route without session, redirect to login
-  if (!isPublicRoute && (!session || !userId)) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-
-  // Block staff from accessing user-permissions page
-  if (pathname === '/user-permissions' && session && userId) {
-    // We need to check the user role, but middleware can't easily access database
-    // So we'll handle this in the page component instead
-    // This is a basic check - full role check will be in the page
-  }
-
   return NextResponse.next();
 }
 

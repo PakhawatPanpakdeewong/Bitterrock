@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../../../database/connection';
+import { getCurrentUser } from '@/lib/auth';
+import { logStaffActivity } from '@/database/activity-log';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const orderId = parseInt(id, 10);
     if (isNaN(orderId)) {
@@ -29,7 +36,7 @@ export async function POST(
     if (orderStatus !== 'shipped') {
       return NextResponse.json({ 
         ok: false, 
-        error: 'สามารถกดยืนยันจัดส่งถึงลูกค้าได้เมื่อสถานะออเดอร์เป็น "จัดส่งแล้ว" เท่านั้น' 
+        error: 'สามารถกดยืนยันจัดส่งถึงลูกค้าได้เมื่อสถานะออเดอร์เป็น "กำลังจัดส่ง" เท่านั้น' 
       }, { status: 400 });
     }
     if (!isPaymentCompleted) {
@@ -43,6 +50,19 @@ export async function POST(
       `UPDATE shipments SET deliverystatus = 'delivered', updateddate = CURRENT_TIMESTAMP WHERE orderid = $1`,
       [orderId]
     );
+
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'mark_order_delivered',
+      resourceType: 'order',
+      resourceId: orderId,
+      ipAddress: ip,
+      details: {
+        previous_status: orderStatus,
+        payment_status: paymentStatus,
+      },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

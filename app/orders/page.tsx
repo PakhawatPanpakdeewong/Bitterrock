@@ -34,6 +34,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
+import { useNotification } from '@/components/ui/notification';
 
 type Order = {
   order_id: number;
@@ -79,6 +80,7 @@ type OrderStats = {
 };
 
 export default function OrdersPage() {
+  const { notify } = useNotification();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -106,6 +108,7 @@ export default function OrdersPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [orderToEdit, setOrderToEdit] = useState<Order | null>(null);
   const [editStatus, setEditStatus] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
   const [updating, setUpdating] = useState(false);
   const [isConfirmEditModalOpen, setIsConfirmEditModalOpen] = useState(false);
   const [pendingEdit, setPendingEdit] = useState<{ order: Order; newStatus: string } | null>(null);
@@ -133,11 +136,11 @@ export default function OrdersPage() {
         setOrders(data.items);
         setStats(data.stats);
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
-      alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+      notify('เกิดข้อผิดพลาดในการโหลดข้อมูล', { type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -173,8 +176,8 @@ export default function OrdersPage() {
     setOrderDetail(null);
   };
 
-  // ขั้นตอนที่อนุญาต: pending -> confirmed -> shipped (ไม่สามารถข้ามหรือย้อนกลับได้)
-  // ถ้าจ่ายเงินสำเร็จแล้ว (confirmed/shipped) ห้ามยกเลิก
+  // ขั้นตอนที่อนุญาต: pending -> confirmed -> shipped -> delivered (ไม่สามารถข้ามหรือย้อนกลับได้)
+  // ถ้าจ่ายเงินสำเร็จแล้ว (confirmed/shipped/delivered) ห้ามยกเลิก
   const getNextAllowedStatuses = (order: Order): { value: string; label: string }[] => {
     const s = order.order_status === 'delivered' ? 'shipped' : order.order_status;
     const isPaymentCompleted = order.payment_status === 'completed' || 
@@ -188,8 +191,9 @@ export default function OrdersPage() {
               { value: 'cancelled', label: 'ถูกยกเลิก' },
             ];
       case 'confirmed':
-        return [{ value: 'shipped', label: 'จัดส่งแล้ว' }]; // จ่ายเงินแล้ว ไม่ให้ยกเลิก
+        return [{ value: 'shipped', label: 'กำลังจัดส่ง' }]; // จ่ายเงินแล้ว ไม่ให้ยกเลิก
       case 'shipped':
+        return [{ value: 'delivered', label: 'จัดส่งเสร็จสิ้น' }];
       case 'cancelled':
         return [];
       default:
@@ -202,7 +206,8 @@ export default function OrdersPage() {
 
   const canEditOrder = (order: Order) => {
     const s = order.order_status === 'delivered' ? 'shipped' : order.order_status;
-    return s !== 'shipped' && s !== 'cancelled';
+    // อนุญาตให้แก้ไขถึงสถานะ shipped (เพื่อเปลี่ยนเป็น delivered) แต่ไม่ให้แก้ cancelled
+    return s !== 'cancelled';
   };
 
   const canDeleteOrder = (order: Order) => {
@@ -224,13 +229,13 @@ export default function OrdersPage() {
       const data = await res.json();
       if (data.ok) {
         await fetchOrders();
-        alert('ยืนยันจัดส่งถึงลูกค้าเรียบร้อยแล้ว');
+        notify('ยืนยันจัดส่งถึงลูกค้าเรียบร้อยแล้ว', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error marking as delivered:', error);
-      alert('เกิดข้อผิดพลาดในการยืนยันจัดส่ง');
+      notify('เกิดข้อผิดพลาดในการยืนยันจัดส่ง', { type: 'error' });
     } finally {
       setMarkingDelivered(false);
     }
@@ -241,6 +246,7 @@ export default function OrdersPage() {
     setOrderToEdit(order);
     const allowed = getNextAllowedStatuses(order);
     setEditStatus(allowed[0]?.value || '');
+    setTrackingNumber('');
     setIsEditModalOpen(true);
   };
 
@@ -248,10 +254,15 @@ export default function OrdersPage() {
     setIsEditModalOpen(false);
     setOrderToEdit(null);
     setEditStatus('');
+    setTrackingNumber('');
   };
 
   const handleSaveClick = () => {
     if (!orderToEdit) return;
+    if (editStatus === 'shipped' && !trackingNumber.trim()) {
+      notify('กรุณากรอกเลข Tracking Number ก่อนเปลี่ยนสถานะเป็นกำลังจัดส่ง', { type: 'warning' });
+      return;
+    }
     setPendingEdit({ order: orderToEdit, newStatus: editStatus });
     setIsConfirmEditModalOpen(true);
   };
@@ -267,30 +278,49 @@ export default function OrdersPage() {
 
     try {
       setUpdating(true);
-      const res = await fetch('/api/orders', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          order_id: order.order_id,
-          order_status: newStatus
-        }),
-      });
 
-      const data = await res.json();
+      if (newStatus === 'delivered') {
+        // ใช้ API เฉพาะทางสำหรับยืนยันจัดส่งสำเร็จ
+        const res = await fetch(`/api/orders/${order.order_id}/delivered`, { method: 'POST' });
+        const data = await res.json();
 
-      if (data.ok) {
-        await fetchOrders();
-        setIsConfirmEditModalOpen(false);
-        setPendingEdit(null);
-        setIsEditModalOpen(false);
-        setOrderToEdit(null);
-        alert('อัปเดตสถานะออเดอร์สำเร็จ');
+        if (data.ok) {
+          await fetchOrders();
+          setIsConfirmEditModalOpen(false);
+          setPendingEdit(null);
+          setIsEditModalOpen(false);
+          setOrderToEdit(null);
+          notify('ยืนยันจัดส่งถึงลูกค้าเรียบร้อยแล้ว', { type: 'success' });
+        } else {
+          notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
+        }
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        const res = await fetch('/api/orders', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            order_id: order.order_id,
+            order_status: newStatus,
+            tracking_number: newStatus === 'shipped' ? trackingNumber.trim() : undefined,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.ok) {
+          await fetchOrders();
+          setIsConfirmEditModalOpen(false);
+          setPendingEdit(null);
+          setIsEditModalOpen(false);
+          setOrderToEdit(null);
+          notify('อัปเดตสถานะออเดอร์สำเร็จ', { type: 'success' });
+        } else {
+          notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
+        }
       }
     } catch (error) {
       console.error('Error updating order:', error);
-      alert('เกิดข้อผิดพลาดในการอัปเดตออเดอร์');
+      notify('เกิดข้อผิดพลาดในการอัปเดตออเดอร์', { type: 'error' });
     } finally {
       setUpdating(false);
     }
@@ -316,13 +346,13 @@ export default function OrdersPage() {
         await fetchOrders();
         setIsDeleteModalOpen(false);
         setOrderToDelete(null);
-        alert('ลบออเดอร์สำเร็จ');
+        notify('ลบออเดอร์สำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error deleting order:', error);
-      alert('เกิดข้อผิดพลาดในการลบออเดอร์');
+      notify('เกิดข้อผิดพลาดในการลบออเดอร์', { type: 'error' });
     } finally {
       setDeleting(false);
     }
@@ -385,13 +415,13 @@ export default function OrdersPage() {
     }
   };
 
-  // สถานะออเดอร์/การจัดส่ง: ยังไม่ดำเนินการ, ยืนยันออเดอร์, จัดส่งแล้ว, ถูกยกเลิก
+  // สถานะออเดอร์/การจัดส่ง: ยังไม่ดำเนินการ, ยืนยันออเดอร์, กำลังจัดส่ง, ถูกยกเลิก
   const getOrderStatusBadge = (orderStatus: string) => {
     switch (orderStatus) {
       case 'confirmed':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-blue-100 text-blue-800">ยืนยันออเดอร์</span>;
       case 'shipped':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-pink-100 text-pink-800">จัดส่งแล้ว</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-pink-100 text-pink-800">กำลังจัดส่ง</span>;
       case 'delivered':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">จัดส่งถึงลูกค้าแล้ว</span>;
       case 'cancelled':
@@ -409,16 +439,81 @@ export default function OrdersPage() {
       order.customer_email.toLowerCase().includes(searchTerm.toLowerCase());
     
     let matchesDate = true;
+    const orderDate = new Date(order.order_date);
+    orderDate.setHours(0, 0, 0, 0);
+
     if (selectedDate === 'today') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const orderDate = new Date(order.order_date);
-      orderDate.setHours(0, 0, 0, 0);
       matchesDate = orderDate.getTime() === today.getTime();
+    } else if (selectedDate === 'week') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const weekAgo = new Date(today);
+      weekAgo.setDate(today.getDate() - 6); // รวมวันนี้ย้อนหลัง 7 วัน
+      weekAgo.setHours(0, 0, 0, 0);
+      matchesDate = orderDate.getTime() >= weekAgo.getTime() && orderDate.getTime() <= today.getTime();
     }
 
     return matchesSearch && matchesDate;
   });
+
+  const handleExport = () => {
+    if (filteredOrders.length === 0) {
+      notify('ไม่มีข้อมูลสำหรับส่งออก', { type: 'warning' });
+      return;
+    }
+
+    const header = [
+      'หมายเลขออเดอร์',
+      'ชื่อลูกค้า',
+      'อีเมลลูกค้า',
+      'ยอดการสั่งซื้อ',
+      'จำนวนสินค้า',
+      'สถานะการสั่งซื้อ',
+      'สถานะการจัดส่ง',
+      'วันที่สั่งซื้อ'
+    ];
+
+    const rows = filteredOrders.map((order) => [
+      formatOrderNumber(order.order_id, order.order_date),
+      `คุณ${order.customer_first_name} ${order.customer_last_name}`,
+      order.customer_email,
+      formatCurrency(order.total_amount),
+      order.item_count.toString(),
+      order.payment_status,
+      order.order_status,
+      formatDate(order.order_date)
+    ]);
+
+    const csvBody = [header, ...rows]
+      .map((cols) =>
+        cols
+          .map((value) => {
+            const v = value.replace(/"/g, '""');
+            return `"${v}"`;
+          })
+          .join(',')
+      )
+      .join('\r\n');
+
+    // เพิ่ม BOM เพื่อให้ Excel อ่านภาษาไทยได้ถูกต้อง
+    const csvContent = '\uFEFF' + csvBody;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const now = new Date();
+    const filename = `orders-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+      now.getDate()
+    ).padStart(2, '0')}.csv`;
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // Pagination
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
@@ -463,7 +558,7 @@ export default function OrdersPage() {
                 variant="outline" 
                 size="sm" 
                 className="h-8 flex items-center gap-1.5 text-xs px-2"
-                onClick={() => alert('ฟีเจอร์ส่งออกข้อมูลจะเปิดใช้งานเร็วๆ นี้')}
+                onClick={handleExport}
               >
                 <Download className="w-3.5 h-3.5" />
                 ส่งออกข้อมูล
@@ -578,11 +673,12 @@ export default function OrdersPage() {
                 setSelectedDate(value);
                 setCurrentPage(1);
               }}>
-                <SelectTrigger className="h-9 w-[120px] text-xs">
-                  <SelectValue placeholder="วันนี้" />
+                <SelectTrigger className="h-9 w-[140px] text-xs">
+                  <SelectValue placeholder="ช่วงวันที่" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="today">วันนี้</SelectItem>
+                  <SelectItem value="week">7 วันที่ผ่านมา</SelectItem>
                   <SelectItem value="all">ทั้งหมด</SelectItem>
                 </SelectContent>
               </Select>
@@ -597,7 +693,7 @@ export default function OrdersPage() {
                   <SelectItem value="all">ทุกสถานะ</SelectItem>
                   <SelectItem value="pending">ยังไม่ดำเนินการ</SelectItem>
                   <SelectItem value="confirmed">ยืนยันออเดอร์</SelectItem>
-                  <SelectItem value="shipped">จัดส่งแล้ว</SelectItem>
+                  <SelectItem value="shipped">กำลังจัดส่ง</SelectItem>
                   <SelectItem value="cancelled">ถูกยกเลิก</SelectItem>
                 </SelectContent>
               </Select>
@@ -667,20 +763,10 @@ export default function OrdersPage() {
                             <Button 
                               variant="outline" 
                               size="sm" 
-                              className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
-                              onClick={() => handleMarkDelivered(order)}
-                              disabled={!canMarkDelivered(order) || markingDelivered}
-                              title={canMarkDelivered(order) ? 'ยืนยันจัดส่งถึงลูกค้าแล้ว' : 'กดได้เมื่อสถานะเป็นจัดส่งแล้วและชำระเงินสำเร็จ'}
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
                               className="h-7 w-7 p-0"
                               onClick={() => handleEditClick(order)}
                               disabled={!canEditOrder(order)}
-                              title={!canEditOrder(order) ? 'ออเดอร์นี้ไม่สามารถแก้ไขสถานะได้ (จัดส่งแล้วหรือถูกยกเลิก)' : 'แก้ไขสถานะ'}
+                              title={!canEditOrder(order) ? 'ออเดอร์นี้ไม่สามารถแก้ไขสถานะได้ (กำลังจัดส่งหรือถูกยกเลิก)' : 'แก้ไขสถานะ'}
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
@@ -926,31 +1012,45 @@ export default function OrdersPage() {
 
             {/* Visual flow */}
             <div>
-              <p className="text-xs font-medium text-gray-500 mb-3">ขั้นตอนการดำเนินการ (ทำตามลำดับเท่านั้น)</p>
-              <div className="flex items-center gap-1">
+              <p className="text-xs font-medium text-gray-500 mb-2">ขั้นตอนการดำเนินการ (ทำตามลำดับเท่านั้น)</p>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
                 {[
                   { key: 'pending', label: 'ยังไม่ดำเนินการ' },
-                  { key: 'arrow1', label: '→' },
                   { key: 'confirmed', label: 'ยืนยันออเดอร์' },
-                  { key: 'arrow2', label: '→' },
-                  { key: 'shipped', label: 'จัดส่งแล้ว' },
-                ].map((step) => {
-                  if (step.key.startsWith('arrow')) {
-                    return <span key={step.key} className="text-gray-300 text-sm px-0.5">→</span>;
-                  }
+                  { key: 'shipped', label: 'กำลังจัดส่ง' },
+                  { key: 'delivered', label: 'จัดส่งเสร็จสิ้น' },
+                ].map((step, index, arr) => {
                   const current = orderToEdit.order_status === 'delivered' ? 'shipped' : orderToEdit.order_status;
+                  const flowOrder = ['pending', 'confirmed', 'shipped', 'delivered'];
                   const isCurrent = step.key === current;
-                  const isPast = ['pending', 'confirmed', 'shipped'].indexOf(step.key) < ['pending', 'confirmed', 'shipped'].indexOf(current);
+                  const isPast = flowOrder.indexOf(step.key) < flowOrder.indexOf(current);
+
+                  const baseClasses =
+                    'inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-[0.7rem] font-medium whitespace-nowrap border transition-colors';
+
+                  const stateClasses = isCurrent
+                    ? 'bg-pink-50 text-pink-700 border-pink-300 shadow-sm'
+                    : isPast
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-gray-100 text-gray-400 border-gray-200';
+
                   return (
-                    <div
-                      key={step.key}
-                      className={`flex-1 rounded-lg px-2 py-2 text-center text-xs font-medium ${
-                        isCurrent ? 'bg-pink-100 text-pink-800 ring-1 ring-pink-200' :
-                        isPast ? 'bg-green-50 text-green-700' :
-                        'bg-gray-100 text-gray-400'
-                      }`}
-                    >
-                      {step.label}
+                    <div key={step.key} className="flex items-center gap-2">
+                      <div className={`${baseClasses} ${stateClasses}`}>
+                        <span
+                          className={`mr-1.5 h-4 w-4 rounded-full border text-[0.6rem] flex items-center justify-center ${
+                            isCurrent || isPast
+                              ? 'border-current bg-white/80'
+                              : 'border-gray-300 bg-white/40'
+                          }`}
+                        >
+                          {flowOrder.indexOf(step.key) + 1}
+                        </span>
+                        <span>{step.label}</span>
+                      </div>
+                      {index < arr.length - 1 && (
+                        <span className="text-gray-300 text-xs shrink-0">→</span>
+                      )}
                     </div>
                   );
                 })}
@@ -977,6 +1077,18 @@ export default function OrdersPage() {
                   </button>
                 ))}
               </div>
+              {editStatus === 'shipped' && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Tracking Number (ต้องกรอก)</p>
+                  <Input
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value.toUpperCase())}
+                    placeholder="ตัวอักษร A-Z / เลข 0-9 จำนวน 13 ตัว"
+                    maxLength={13}
+                    className="h-9 text-sm"
+                  />
+                </div>
+              )}
               {(orderToEdit.payment_status === 'completed' || ['confirmed', 'shipped', 'delivered'].includes(orderToEdit.order_status)) && (
                 <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
                   <span>✓</span> ชำระเงินสำเร็จแล้ว — ไม่สามารถยกเลิกออเดอร์ได้

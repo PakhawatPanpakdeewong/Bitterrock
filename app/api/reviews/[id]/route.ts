@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../../database/connection';
+import { getCurrentUser } from '@/lib/auth';
+import { logStaffActivity } from '@/database/activity-log';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const reviewId = parseInt(id, 10);
     if (isNaN(reviewId)) {
@@ -33,6 +40,18 @@ export async function PATCH(
     if (res.rowCount === 0) {
       return NextResponse.json({ ok: false, error: 'ไม่พบรีวิว' }, { status: 404 });
     }
+
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'review_moderation',
+      resourceType: 'review',
+      resourceId: reviewId,
+      ipAddress: ip,
+      details: {
+        is_approved,
+      },
+    });
 
     return NextResponse.json({
       ok: true,

@@ -7,7 +7,9 @@
     "dev:no-turbo": "next dev -p 3004",
     "build": "next build",
     "start": "next start -p 3001",
-    "db:migrate": "node database/scripts/migrate.js"
+    "db:migrate": "node database/scripts/migrate.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.927.0",
@@ -27,19 +29,39 @@
     "pg": "^8.16.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "recharts": "^3.8.0",
     "tailwind-merge": "^3.3.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@types/xlsx": "^0.0.36",
     "autoprefixer": "^10.4.21",
+    "jest": "^30.3.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "tailwindcss-animate": "^1.0.7",
+    "ts-jest": "^29.2.0",
     "typescript": "^5.9.3"
-  }
+  },
+  "description": "A modern full-stack web application for KiddyCare - maternity and baby products management, built with Next.js 14 (App Router), TypeScript, PostgreSQL, and AWS S3/R2 storage.",
+  "main": "next.config.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PakhawatPanpakdeewong/Bitterrock.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/PakhawatPanpakdeewong/Bitterrock/issues"
+  },
+  "homepage": "https://github.com/PakhawatPanpakdeewong/Bitterrock#readme"
 }

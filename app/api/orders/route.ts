@@ -1,22 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { query } from '../../../database/connection';
-
-function getRandomTrackingNumber(): string | null {
-  try {
-    const filePath = join(process.cwd(), 'TrackingNumber.txt');
-    const content = readFileSync(filePath, 'utf-8');
-    const lines = content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    if (lines.length === 0) return null;
-    return lines[Math.floor(Math.random() * lines.length)];
-  } catch {
-    return null;
-  }
-}
+import { getCurrentUser } from '@/lib/auth';
+import { logStaffActivity } from '@/database/activity-log';
 
 type DbOrder = {
   order_id: number;
@@ -158,8 +143,13 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { order_id, order_status } = body;
+    const { order_id, order_status, tracking_number } = body;
 
     if (!order_id || !order_status) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 });
@@ -200,8 +190,52 @@ export async function PUT(req: NextRequest) {
       }
       return NextResponse.json({ 
         ok: false, 
-        error: 'การเปลี่ยนสถานะไม่ถูกต้อง ห้ามข้ามขั้นตอนหรือย้อนกลับ (ยังไม่ดำเนินการ → ยืนยันออเดอร์ → จัดส่งแล้ว)' 
+        error: 'การเปลี่ยนสถานะไม่ถูกต้อง ห้ามข้ามขั้นตอนหรือย้อนกลับ (ยังไม่ดำเนินการ → ยืนยันออเดอร์ → กำลังจัดส่ง)' 
       }, { status: 400 });
+    }
+
+    // เมื่อเปลี่ยนเป็น "กำลังจัดส่ง" (shipped) ต้องมีเลขติดตามก่อน — ให้ผู้ใช้กรอกเอง
+    let assignedTrackingNumber: string | null = null;
+    if (order_status === 'shipped') {
+      if (!tracking_number || typeof tracking_number !== 'string' || tracking_number.trim() === '') {
+        return NextResponse.json(
+          { ok: false, error: 'กรุณากรอกเลข Tracking Number ก่อนเปลี่ยนสถานะเป็นกำลังจัดส่ง' },
+          { status: 400 }
+        );
+      }
+
+      const normalized = tracking_number.trim();
+      // ต้องเป็นตัวอักษรอังกฤษพิมพ์ใหญ่ A-Z หรือเลข 0-9 เท่านั้น และยาว 13 ตัวอักษร
+      if (!/^[A-Z0-9]{13}$/.test(normalized)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              'รูปแบบ Tracking Number ไม่ถูกต้อง (ต้องเป็นตัวอักษร A-Z หรือเลข 0-9 จำนวน 13 ตัวอักษร เช่น OB416416775TH)',
+          },
+          { status: 400 }
+        );
+      }
+
+      const usedRes = await query(
+        `SELECT trackingnumber FROM shipments WHERE trackingnumber IS NOT NULL
+         UNION
+         SELECT trackingnumber FROM payments WHERE trackingnumber IS NOT NULL`,
+        []
+      );
+      const usedSet = new Set(
+        (usedRes.rows as { trackingnumber: string }[])
+          .map((r) => r.trackingnumber)
+          .filter(Boolean)
+      );
+      if (usedSet.has(normalized)) {
+        return NextResponse.json(
+          { ok: false, error: 'Tracking Number นี้ถูกใช้ไปแล้ว กรุณาใช้หมายเลขอื่น' },
+          { status: 400 }
+        );
+      }
+
+      assignedTrackingNumber = normalized;
     }
 
     // Update order status
@@ -231,44 +265,38 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // เมื่อเปลี่ยนเป็น "จัดส่งแล้ว" (shipped) ให้สุ่ม tracking number จาก TrackingNumber.txt และบันทึกลง shipments
-    if (order_status === 'shipped') {
-      const usedRes = await query(
-        `SELECT trackingnumber FROM shipments WHERE trackingnumber IS NOT NULL
-         UNION
-         SELECT trackingnumber FROM payments WHERE trackingnumber IS NOT NULL`,
-        []
+    // บันทึกเลขติดตามลง shipments (มี assignedTrackingNumber แน่นอนเมื่อ order_status === 'shipped')
+    if (order_status === 'shipped' && assignedTrackingNumber) {
+      const updateRes = await query(
+        `UPDATE shipments SET deliverystatus = 'shipped', trackingnumber = $1, updateddate = CURRENT_TIMESTAMP WHERE orderid = $2`,
+        [assignedTrackingNumber, order_id]
       );
-      const usedSet = new Set(
-        (usedRes.rows as { trackingnumber: string }[])
-          .map((r) => r.trackingnumber)
-          .filter(Boolean)
-      );
-
-      let trackingNumber: string | null = null;
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const candidate = getRandomTrackingNumber();
-        if (candidate && !usedSet.has(candidate)) {
-          trackingNumber = candidate;
-          break;
-        }
-      }
-
-      if (trackingNumber) {
-        const updateRes = await query(
-          `UPDATE shipments SET deliverystatus = 'shipped', trackingnumber = $1, updateddate = CURRENT_TIMESTAMP WHERE orderid = $2`,
-          [trackingNumber, order_id]
+      if (updateRes.rowCount === 0) {
+        await query(
+          `INSERT INTO shipments (orderid, trackingnumber, deliverystatus) VALUES ($1, $2, 'shipped')`,
+          [order_id, assignedTrackingNumber]
         );
-        if (updateRes.rowCount === 0) {
-          await query(
-            `INSERT INTO shipments (orderid, trackingnumber, deliverystatus) VALUES ($1, $2, 'shipped')`,
-            [order_id, trackingNumber]
-          );
-        }
       }
     }
 
-    return NextResponse.json({ ok: true });
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'update_order_status',
+      resourceType: 'order',
+      resourceId: order_id,
+      ipAddress: ip,
+      details: {
+        from_status: currentOrderStatus,
+        to_status: order_status,
+        tracking_number: assignedTrackingNumber ?? tracking_number ?? null,
+      },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      ...(assignedTrackingNumber ? { tracking_number: assignedTrackingNumber } : {}),
+    });
   } catch (error: any) {
     console.error('Error updating order:', error);
     const message = error?.message || 'Unknown error';
@@ -278,6 +306,11 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const orderId = searchParams.get('id');
 
@@ -311,6 +344,19 @@ export async function DELETE(req: NextRequest) {
       `DELETE FROM orders WHERE orderid = $1`,
       [orderId]
     );
+
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
+    await logStaffActivity({
+      user,
+      actionType: 'delete_order',
+      resourceType: 'order',
+      resourceId: orderId,
+      ipAddress: ip,
+      details: {
+        order_status: orderStatus,
+        payment_status: paymentStatus,
+      },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {

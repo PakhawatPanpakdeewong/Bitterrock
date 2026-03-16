@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { Label } from '@/components/ui/label';
+import { useNotification } from '@/components/ui/notification';
 
 // Mock data types
 type UserRole = 'ADMIN' | 'MANAGER' | 'STAFF';
@@ -98,6 +99,7 @@ const permissions: Permission[] = [
 ];
 
 export default function UserPermissionsPage() {
+  const { notify } = useNotification();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<{ role: string; id?: number } | null>(null);
@@ -188,11 +190,11 @@ export default function UserPermissionsPage() {
           window.location.href = '/';
           return;
         }
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error fetching users:', error);
-      alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+      notify('เกิดข้อผิดพลาดในการโหลดข้อมูล', { type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -253,7 +255,7 @@ export default function UserPermissionsPage() {
 
   const handleCreateSubmit = async () => {
     if (!formData.name || !formData.email || !formData.role || !formData.password) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      notify('กรุณากรอกข้อมูลให้ครบถ้วน', { type: 'warning' });
       return;
     }
 
@@ -276,13 +278,13 @@ export default function UserPermissionsPage() {
         await fetchUsers();
         setIsCreateModalOpen(false);
         setFormData({ name: '', email: '', role: 'STAFF', password: '' });
-        alert('สร้างผู้ใช้งานสำเร็จ');
+        notify('สร้างผู้ใช้งานสำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error creating user:', error);
-      alert('เกิดข้อผิดพลาดในการสร้างผู้ใช้งาน');
+      notify('เกิดข้อผิดพลาดในการสร้างผู้ใช้งาน', { type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -290,14 +292,14 @@ export default function UserPermissionsPage() {
 
   const handleEditSubmit = async () => {
     if (!selectedUser || !formData.name || !formData.email) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      notify('กรุณากรอกข้อมูลให้ครบถ้วน', { type: 'warning' });
       return;
     }
 
     // Don't allow role change if editing own account
     const isOwnAccount = currentUser?.id === selectedUser.id;
     if (!isOwnAccount && !formData.role) {
-      alert('กรุณาเลือกบทบาท');
+      notify('กรุณาเลือกบทบาท', { type: 'warning' });
       return;
     }
 
@@ -333,13 +335,13 @@ export default function UserPermissionsPage() {
         setIsEditModalOpen(false);
         setSelectedUser(null);
         setFormData({ name: '', email: '', role: 'STAFF', password: '' });
-        alert('อัปเดตข้อมูลผู้ใช้งานสำเร็จ');
+        notify('อัปเดตข้อมูลผู้ใช้งานสำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error updating user:', error);
-      alert('เกิดข้อผิดพลาดในการอัปเดตผู้ใช้งาน');
+      notify('เกิดข้อผิดพลาดในการอัปเดตผู้ใช้งาน', { type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -360,13 +362,13 @@ export default function UserPermissionsPage() {
         await fetchUsers();
         setIsDeleteModalOpen(false);
         setSelectedUser(null);
-        alert('ลบผู้ใช้งานสำเร็จ');
+        notify('ลบผู้ใช้งานสำเร็จ', { type: 'success' });
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`);
+        notify(`เกิดข้อผิดพลาด: ${data.error || 'ไม่ทราบสาเหตุ'}`, { type: 'error' });
       }
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('เกิดข้อผิดพลาดในการลบผู้ใช้งาน');
+      notify('เกิดข้อผิดพลาดในการลบผู้ใช้งาน', { type: 'error' });
     } finally {
       setSubmitting(false);
     }

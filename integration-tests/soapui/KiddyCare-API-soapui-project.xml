@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soapui-project name="KiddyCare API Integration Tests" xmlns="http://eviware.com/soapui/config" xmlns:con="http://eviware.com/soapui/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <con:interface xsi:type="con:RestService" wadlVersion="http://wadl.dev.java.net/2009/02" name="KiddyCare API" type="rest" xmlns:con="http://eviware.com/soapui/config">
+    <con:settings/>
+    <con:definition type="WADL" source=""/>
+    <con:basePath>http://localhost:3004/api</con:basePath>
+    <con:endpoints>
+      <con:endpoint>http://localhost:3004/api</con:endpoint>
+    </con:endpoints>
+    <con:resource name="auth-login" path="/auth/login">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="POST" method="POST">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Login - Valid" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+            <con:requestBody>{"usernameOrEmail":"admin","password":"your_test_password"}</con:requestBody>
+          </con:request>
+        </con:request>
+        <con:request name="Login - Missing credentials (400)" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+            <con:requestBody>{"usernameOrEmail":"","password":""}</con:requestBody>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="auth-me" path="/auth/me">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="GET" method="GET">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Get current user (requires cookie)" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="auth-logout" path="/auth/logout">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="POST" method="POST">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Logout" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="categories" path="/categories">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="GET" method="GET">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Get categories" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="orders" path="/orders">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="GET" method="GET">
+        <con:settings/>
+        <con:parameters>
+          <con:parameter name="limit" value="10"/>
+          <con:parameter name="offset" value="0"/>
+        </con:parameters>
+        <con:request name="Get orders list" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="reorder" path="/reorder">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="GET" method="GET">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Get reorder list" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="products" path="/products">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="GET" method="GET">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Get products" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+    <con:resource name="warehouses" path="/warehouses">
+      <con:settings/>
+      <con:parameters/>
+      <con:method name="GET" method="GET">
+        <con:settings/>
+        <con:parameters/>
+        <con:request name="Get warehouses" mediaType="application/json">
+          <con:settings/>
+          <con:endpoint>http://localhost:3004/api</con:endpoint>
+          <con:request/>
+          <con:credentials/>
+          <con:request type="request" mediaType="application/json">
+            <con:settings/>
+          </con:request>
+        </con:request>
+      </con:method>
+    </con:resource>
+  </con:interface>
+</soapui-project>

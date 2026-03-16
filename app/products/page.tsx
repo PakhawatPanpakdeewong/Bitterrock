@@ -12,6 +12,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
+import { useNotification } from "@/components/ui/notification";
 import { ResponsiveImage } from "@/components/ui/responsive-image";
 import { Grid, List, RefreshCw, Search, Plus, Pencil, Upload, ArrowUpDown, FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -51,6 +52,7 @@ const mockProducts: Product[] = [];
 type R2Item = { key: string; url: string | null };
 
 export default function ProductsPage() {
+  const { notify } = useNotification();
   const [images, setImages] = useState<R2Item[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -1305,7 +1307,10 @@ export default function ProductsPage() {
       pdf.save(filename);
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      alert('เกิดข้อผิดพลาดในการส่งออก PDF: ' + (error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'));
+      notify(
+        'เกิดข้อผิดพลาดในการส่งออก PDF: ' + (error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'),
+        { type: 'error' }
+      );
     }
   };
 

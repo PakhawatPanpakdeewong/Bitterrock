@@ -5,7 +5,6 @@
  */
 const { Pool } = require('pg');
 const dotenv = require('dotenv');
-const fs = require('fs');
 const path = require('path');
 
 // Resolve project root (parent of database/)
@@ -28,27 +27,15 @@ if (process.env.DB_SSL === 'true') {
   dbConfig.ssl = false;
 }
 
-const migrations = [
-  { name: 'add_fetch_logs', file: 'add_fetch_logs.sql' },
-  { name: 'add_reorder_params', file: 'add_reorder_params.sql' },
-];
+const { runMigration, migrations } = require('./migrate-utils');
 
-async function runMigration(pool, migration) {
-  const sqlPath = path.join(__dirname, '..', 'migrations', migration.file);
-  if (!fs.existsSync(sqlPath)) {
-    console.log(`⏭️  Skipping ${migration.name}: ${migration.file} not found`);
-    return;
-  }
-  const sql = fs.readFileSync(sqlPath, 'utf8');
-  try {
-    await pool.query(sql);
-    console.log(`✅ Migration ${migration.name} completed`);
-  } catch (err) {
-    if (err.code === '42P07') {
-      console.log(`⏭️  Skipping ${migration.name}: object already exists`);
-    } else {
-      throw err;
-    }
+function logMigrationResult(name, result) {
+  if (result === 'skipped') {
+    console.log(`⏭️  Skipping ${name}: file not found`);
+  } else if (result === 'completed') {
+    console.log(`✅ Migration ${name} completed`);
+  } else if (result === 'already_exists') {
+    console.log(`⏭️  Skipping ${name}: object already exists`);
   }
 }
 
@@ -65,7 +52,8 @@ async function main() {
   try {
     console.log('Running migrations...');
     for (const m of migrations) {
-      await runMigration(pool, m);
+      const result = await runMigration(pool, m);
+      logMigrationResult(m.name, result);
     }
     console.log('Done.');
   } catch (err) {
