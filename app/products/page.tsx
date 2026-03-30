@@ -14,7 +14,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNotification } from "@/components/ui/notification";
 import { ResponsiveImage } from "@/components/ui/responsive-image";
-import { Grid, List, RefreshCw, Search, Plus, Pencil, Upload, ArrowUpDown, FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+import { Grid, List, RefreshCw, Search, Plus, Pencil, ArrowUpDown, FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
@@ -49,6 +49,19 @@ type Product = {
 
 const mockProducts: Product[] = [];
 
+/** Sort attribute values by SKU code (attribute_value_code): 0–9 then A–Z, per character. */
+function compareAttributeValueSkuCode(
+  a: { attribute_value_code?: string | null },
+  b: { attribute_value_code?: string | null }
+): number {
+  const sa = (a.attribute_value_code ?? "").trim().toUpperCase();
+  const sb = (b.attribute_value_code ?? "").trim().toUpperCase();
+  if (sa === sb) return 0;
+  if (!sa) return 1;
+  if (!sb) return -1;
+  return sa.localeCompare(sb, "en", { sensitivity: "base", numeric: false });
+}
+
 type R2Item = { key: string; url: string | null };
 
 export default function ProductsPage() {
@@ -71,6 +84,7 @@ export default function ProductsPage() {
   const [createOpen, setCreateOpen] = useState<boolean>(false);
   const [createStep, setCreateStep] = useState<1 | 2 | 3 | 4>(1);
   const [step2ValidationAttempted, setStep2ValidationAttempted] = useState<boolean>(false);
+  const [step3ValidationAttempted, setStep3ValidationAttempted] = useState<boolean>(false);
   const [editForm, setEditForm] = useState<null | (Product & {
     product_name_th?: string;
     product_name_en?: string;
@@ -608,12 +622,20 @@ export default function ProductsPage() {
         
         // Create variant with attributes
         // Note: ProductVariantAttributes will only be created if is_active = true
-            const variantPayload = {
+            const costNum = Number(variantCost);
+        const priceNumCreate = Number(variantPrice || 0);
+        if (variantCost.trim() === '' || Number.isNaN(costNum) || costNum < 0) {
+          throw new Error('กรุณากรอกต้นทุนสินค้า (ขั้นตอนที่ 3) ให้ถูกต้อง');
+        }
+        if (costNum > priceNumCreate) {
+          throw new Error('ต้นทุนต้องไม่มากกว่าราคา');
+        }
+        const variantPayload = {
               product_id: productId,
           attribute_value_ids: selectedAttributeValues.length > 0 ? selectedAttributeValues : [],
           sku: variantSku,
-          price: Number(variantPrice || 0),
-          cost: variantCost && !Number.isNaN(Number(variantCost)) ? Number(variantCost) : null,
+          price: priceNumCreate,
+          cost: costNum,
           is_active: variantIsActive // Will be false by default (no image = not active)
             };
             
@@ -682,6 +704,7 @@ export default function ProductsPage() {
       setImagePreviews([]);
       setCreateStep(1);
       setStep2ValidationAttempted(false);
+      setStep3ValidationAttempted(false);
       await refetchProducts();
       return true; // Success
     } catch (e: any) {
@@ -1729,18 +1752,6 @@ export default function ProductsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    // TODO: Implement export functionality
-                    console.log('Export variants');
-                  }}
-                  className="h-9 flex items-center gap-2"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span className="text-sm">ส่งออกข้อมูล</span>
-                </Button>
               </div>
             </div>
             <div className="p-4 space-y-4">
@@ -2265,6 +2276,7 @@ export default function ProductsPage() {
       <Modal isOpen={createOpen} onClose={() => {
         setCreateOpen(false);
         setStep2ValidationAttempted(false);
+        setStep3ValidationAttempted(false);
         setCreateStep(1);
         setSelectedCategoryId("");
         setSelectedSubCategoryId("");
@@ -2274,6 +2286,7 @@ export default function ProductsPage() {
         setSelectedMainAttribute("");
         setSelectedSecondaryAttribute("");
         setVariantPrice("");
+        setVariantCost("");
         setVariantIsActive(false);
         setUploadedImages([]);
         setImagePreviews([]);
@@ -2513,6 +2526,7 @@ export default function ProductsPage() {
                       return; // Don't proceed if validation fails
                     }
                     setStep2ValidationAttempted(false);
+                    setStep3ValidationAttempted(false);
                     setCreateStep(3);
                   }}
                   className="bg-pink-500 hover:bg-pink-600 text-white"
@@ -2589,7 +2603,9 @@ export default function ProductsPage() {
                           if (!selectedAttr || !selectedAttr.values || selectedAttr.values.length === 0) {
                             return <p className="text-sm text-gray-400">ไม่มีค่าที่เลือกได้</p>;
                           }
-                          return selectedAttr.values.map((value) => {
+                          return [...selectedAttr.values]
+                            .sort(compareAttributeValueSkuCode)
+                            .map((value) => {
                             const isSelected = selectedAttributes[selectedAttr.attribute_id] === value.attribute_value_id;
                             return (
                               <button
@@ -2689,7 +2705,9 @@ export default function ProductsPage() {
                                   return <p className="text-sm text-gray-400">ไม่มีค่าที่เลือกได้</p>;
                                 }
                                 const selectedValueId = selectedAttributes[selectedAttr.attribute_id];
-                                return selectedAttr.values.map((value) => {
+                                return [...selectedAttr.values]
+                                  .sort(compareAttributeValueSkuCode)
+                                  .map((value) => {
                                   const isSelected = selectedValueId === value.attribute_value_id;
                                   return (
                                     <button
@@ -2747,10 +2765,37 @@ export default function ProductsPage() {
                       value={variantPrice}
                       onChange={(e) => setVariantPrice(e.target.value)}
                       placeholder="กรอกราคา"
+                      className={
+                        step3ValidationAttempted &&
+                        ((!variantPrice.trim() ||
+                          Number(variantPrice) <= 0 ||
+                          Number.isNaN(Number(variantPrice))) ||
+                          (variantPrice.trim() !== '' &&
+                            variantCost.trim() !== '' &&
+                            !Number.isNaN(Number(variantPrice)) &&
+                            !Number.isNaN(Number(variantCost)) &&
+                            Number(variantCost) > Number(variantPrice)))
+                          ? 'border-red-400 focus-visible:ring-red-400'
+                          : ''
+                      }
                   />
+                  {step3ValidationAttempted &&
+                    (!variantPrice.trim() || Number(variantPrice) <= 0 || Number.isNaN(Number(variantPrice))) && (
+                      <p className="mt-1 text-xs text-red-600">กรุณากรอกราคาที่มากกว่า 0</p>
+                    )}
+                  {step3ValidationAttempted &&
+                    variantPrice.trim() !== '' &&
+                    variantCost.trim() !== '' &&
+                    !Number.isNaN(Number(variantPrice)) &&
+                    !Number.isNaN(Number(variantCost)) &&
+                    Number(variantCost) > Number(variantPrice) && (
+                      <p className="mt-1 text-xs text-red-600">ราคาต้องไม่น้อยกว่าต้นทุน (หรือลดต้นทุนให้ไม่เกินราคา)</p>
+                    )}
                 </div>
                 <div>
-                    <Label htmlFor="variant_cost">ต้นทุน</Label>
+                    <Label htmlFor="variant_cost">
+                      ต้นทุน <span className="text-red-500">*</span>
+                    </Label>
                   <Input 
                       id="variant_cost"
                       type="number"
@@ -2758,8 +2803,35 @@ export default function ProductsPage() {
                       min="0"
                       value={variantCost}
                       onChange={(e) => setVariantCost(e.target.value)}
-                      placeholder="กรอกต้นทุนสินค้า (ไม่บังคับ)"
+                      placeholder="กรอกต้นทุนสินค้า (บาท)"
+                      className={
+                        step3ValidationAttempted &&
+                        (variantCost.trim() === '' ||
+                          Number.isNaN(Number(variantCost)) ||
+                          Number(variantCost) < 0 ||
+                          (variantPrice.trim() !== '' &&
+                            variantCost.trim() !== '' &&
+                            !Number.isNaN(Number(variantPrice)) &&
+                            !Number.isNaN(Number(variantCost)) &&
+                            Number(variantCost) > Number(variantPrice)))
+                          ? 'border-red-400 focus-visible:ring-red-400'
+                          : ''
+                      }
                   />
+                  {step3ValidationAttempted &&
+                    (variantCost.trim() === '' ||
+                      Number.isNaN(Number(variantCost)) ||
+                      Number(variantCost) < 0) && (
+                      <p className="mt-1 text-xs text-red-600">กรุณากรอกต้นทุน (ตัวเลขไม่ติดลบ)</p>
+                    )}
+                  {step3ValidationAttempted &&
+                    variantPrice.trim() !== '' &&
+                    variantCost.trim() !== '' &&
+                    !Number.isNaN(Number(variantPrice)) &&
+                    !Number.isNaN(Number(variantCost)) &&
+                    Number(variantCost) > Number(variantPrice) && (
+                      <p className="mt-1 text-xs text-red-600">ต้นทุนต้องไม่มากกว่าราคา</p>
+                    )}
                 </div>
 
                 </div>
@@ -2820,13 +2892,35 @@ export default function ProductsPage() {
               )}
               
               <div className="flex items-center gap-2 pt-4 justify-end border-t border-gray-200">
-                <Button variant="outline" onClick={() => setCreateStep(2)}>ย้อนกลับ</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStep3ValidationAttempted(false);
+                    setCreateStep(2);
+                  }}
+                >
+                  ย้อนกลับ
+                </Button>
                 <Button 
                   onClick={() => {
-                    // Validate before proceeding
-                    if (!selectedMainAttribute || Object.keys(selectedAttributes).length === 0 || !variantPrice || Number(variantPrice) <= 0) {
-                      return; // Don't proceed if validation fails
+                    setStep3ValidationAttempted(true);
+                    const priceNum = Number(variantPrice);
+                    const costNum = Number(variantCost);
+                    const priceOk =
+                      variantPrice.trim() !== '' && !Number.isNaN(priceNum) && priceNum > 0;
+                    const costOk =
+                      variantCost.trim() !== '' && !Number.isNaN(costNum) && costNum >= 0;
+                    const costNotAbovePrice = priceOk && costOk && costNum <= priceNum;
+                    if (
+                      !selectedMainAttribute ||
+                      Object.keys(selectedAttributes).length === 0 ||
+                      !priceOk ||
+                      !costOk ||
+                      !costNotAbovePrice
+                    ) {
+                      return;
                     }
+                    setStep3ValidationAttempted(false);
                     setCreateStep(4);
                   }}
                   className="bg-pink-500 hover:bg-pink-600"
@@ -3355,6 +3449,15 @@ export default function ProductsPage() {
               disabled={isVariantSubmitting} 
               onClick={async () => {
                 if (!editingVariant) return;
+                const editPrice = Number(variantFormData.price);
+                const editCost =
+                  variantFormData.cost && !Number.isNaN(Number(variantFormData.cost))
+                    ? Number(variantFormData.cost)
+                    : null;
+                if (editCost != null && !Number.isNaN(editCost) && editCost > editPrice) {
+                  setVariantsError('ต้นทุนต้องไม่มากกว่าราคา');
+                  return;
+                }
                 setIsVariantSubmitting(true);
                 try {
                   const res = await fetch('/api/product-variants', { 
@@ -3362,8 +3465,8 @@ export default function ProductsPage() {
                     headers: { 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ 
                       variant_id: editingVariant.variant_id, 
-                      price: Number(variantFormData.price), 
-                      cost: variantFormData.cost && !Number.isNaN(Number(variantFormData.cost)) ? Number(variantFormData.cost) : null,
+                      price: editPrice, 
+                      cost: editCost,
                       is_active: variantFormData.is_active 
                     }) 
                   });

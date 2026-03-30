@@ -31,10 +31,12 @@ import {
   Package,
   Mail,
   MapPin,
-  Calendar
+  Calendar,
+  X,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { useNotification } from '@/components/ui/notification';
+import { ResponsiveImage } from '@/components/ui/responsive-image';
 
 type Order = {
   order_id: number;
@@ -59,11 +61,28 @@ type OrderItemDetail = {
   product_name_th: string;
   product_name_en: string;
   sku: string;
+  image_url?: string | null;
   quantity_ordered: number;
   unit_price: number;
   total_price: number;
   attribute_values: string | null;
 };
+
+type R2ListItem = { key: string; url: string | null };
+
+function resolveOrderItemImageUrl(
+  imageUrl: string | null | undefined,
+  sku: string | null | undefined,
+  r2Items: R2ListItem[]
+): string | null {
+  if (imageUrl) return imageUrl;
+  if (!sku || r2Items.length === 0) return null;
+  const match = r2Items.find((img) => {
+    const imageSku = img.key.split('.')[0];
+    return imageSku === sku || imageSku.startsWith(`${sku}-`);
+  });
+  return match?.url ?? null;
+}
 
 type OrderDetail = Order & {
   items: OrderItemDetail[];
@@ -113,10 +132,44 @@ export default function OrdersPage() {
   const [isConfirmEditModalOpen, setIsConfirmEditModalOpen] = useState(false);
   const [pendingEdit, setPendingEdit] = useState<{ order: Order; newStatus: string } | null>(null);
   const [markingDelivered, setMarkingDelivered] = useState(false);
+  const [r2Images, setR2Images] = useState<R2ListItem[]>([]);
+  const [previewImage, setPreviewImage] = useState<{ url: string; alt: string } | null>(null);
 
   useEffect(() => {
     fetchOrders();
   }, [selectedDate, selectedStatus]);
+
+  useEffect(() => {
+    if (!previewImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setPreviewImage(null);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [previewImage]);
+
+  useEffect(() => {
+    if (!isDetailModalOpen || !orderDetail?.items?.length) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/r2-objects?all=true');
+        const data = await res.json();
+        if (!cancelled && data.ok && Array.isArray(data.items)) {
+          setR2Images(data.items);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDetailModalOpen, orderDetail?.order_id]);
 
   const fetchOrders = async () => {
     try {
@@ -129,7 +182,7 @@ export default function OrdersPage() {
         params.append('search', searchTerm);
       }
 
-      const res = await fetch(`/api/orders?${params.toString()}`);
+      const res = await fetch(`/api/orders?${params.toString()}`, { cache: 'no-store' });
       const data = await res.json();
 
       if (data.ok) {
@@ -161,9 +214,11 @@ export default function OrdersPage() {
       if (data.ok) {
         setOrderDetail(data.order);
       } else {
+        notify(data.error || 'โหลดรายละเอียดออเดอร์ไม่สำเร็จ', { type: 'error' });
         setOrderDetail({ ...order, items: [] });
       }
     } catch {
+      notify('โหลดรายละเอียดออเดอร์ไม่สำเร็จ', { type: 'error' });
       setOrderDetail({ ...order, items: [] });
     } finally {
       setDetailLoading(false);
@@ -171,6 +226,7 @@ export default function OrdersPage() {
   };
 
   const handleCloseDetail = () => {
+    setPreviewImage(null);
     setIsDetailModalOpen(false);
     setSelectedOrder(null);
     setOrderDetail(null);
@@ -205,9 +261,7 @@ export default function OrdersPage() {
   };
 
   const canEditOrder = (order: Order) => {
-    const s = order.order_status === 'delivered' ? 'shipped' : order.order_status;
-    // อนุญาตให้แก้ไขถึงสถานะ shipped (เพื่อเปลี่ยนเป็น delivered) แต่ไม่ให้แก้ cancelled
-    return s !== 'cancelled';
+    return order.order_status !== 'cancelled';
   };
 
   const canDeleteOrder = (order: Order) => {
@@ -404,7 +458,7 @@ export default function OrdersPage() {
   const getPaymentStatusBadge = (paymentStatus: string) => {
     switch (paymentStatus) {
       case 'completed':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">สำเร็จ</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">ชำระเงินแล้ว</span>;
       case 'pending':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-yellow-100 text-yellow-800">รอการชำระเงิน</span>;
       case 'failed':
@@ -423,7 +477,7 @@ export default function OrdersPage() {
       case 'shipped':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-pink-100 text-pink-800">กำลังจัดส่ง</span>;
       case 'delivered':
-        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">จัดส่งถึงลูกค้าแล้ว</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-green-100 text-green-800">จัดส่งสำเร็จ</span>;
       case 'cancelled':
         return <span className="px-2 py-0.5 rounded-full text-[0.7rem] font-medium bg-red-100 text-red-800">ถูกยกเลิก</span>;
       case 'pending':
@@ -766,7 +820,13 @@ export default function OrdersPage() {
                               className="h-7 w-7 p-0"
                               onClick={() => handleEditClick(order)}
                               disabled={!canEditOrder(order)}
-                              title={!canEditOrder(order) ? 'ออเดอร์นี้ไม่สามารถแก้ไขสถานะได้ (กำลังจัดส่งหรือถูกยกเลิก)' : 'แก้ไขสถานะ'}
+                              title={
+                                !canEditOrder(order)
+                                  ? 'ออเดอร์นี้ไม่สามารถแก้ไขสถานะได้ (ถูกยกเลิกแล้ว)'
+                                  : order.order_status === 'delivered'
+                                    ? 'ดูสถานะออเดอร์'
+                                    : 'แก้ไขสถานะ'
+                              }
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
@@ -914,22 +974,64 @@ export default function OrdersPage() {
                 <div>
                   <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
                     <Package className="w-3.5 h-3.5" />
-                    รายการสินค้า ({orderDetail.items?.length || orderDetail.item_count} รายการ)
+                    รายการสินค้า ({orderDetail.items?.length ?? 0} รายการ)
                   </div>
                   {orderDetail.items && orderDetail.items.length > 0 ? (
                     <div className="rounded-xl border border-gray-100 overflow-hidden">
                       <div className="divide-y divide-gray-50">
-                        {orderDetail.items.map((item) => (
-                          <div key={item.order_item_id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50/50 transition-colors">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {item.product_name_th || item.product_name_en}
-                              </p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs text-gray-500">{item.sku}</span>
-                                {item.attribute_values && (
-                                  <span className="text-xs text-gray-400">• {item.attribute_values}</span>
+                        {orderDetail.items.map((item) => {
+                          const imgSrc = resolveOrderItemImageUrl(item.image_url, item.sku, r2Images);
+                          return (
+                          <div key={item.order_item_id} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50/50 transition-colors">
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                              <div className="shrink-0 w-14 h-14">
+                                {imgSrc ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPreviewImage({
+                                        url: imgSrc,
+                                        alt: item.product_name_th || item.product_name_en || item.sku,
+                                      })
+                                    }
+                                    className="group block h-14 w-14 overflow-hidden rounded-lg border border-gray-100 text-left ring-offset-2 transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-zoom-in"
+                                    aria-label="ดูรูปสินค้าขนาดใหญ่"
+                                  >
+                                    <ResponsiveImage
+                                      src={imgSrc}
+                                      alt={item.product_name_th || item.product_name_en || item.sku}
+                                      aspectRatio="square"
+                                      objectFit="cover"
+                                      containerClassName="w-14 h-14 rounded-lg border-0"
+                                      hoverEffect={false}
+                                    />
+                                  </button>
+                                ) : (
+                                  <ResponsiveImage
+                                    src=""
+                                    alt=""
+                                    aspectRatio="square"
+                                    objectFit="cover"
+                                    containerClassName="w-14 h-14 rounded-lg border border-gray-100"
+                                    hoverEffect={false}
+                                    fallback={
+                                      <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-gray-100 bg-gray-50 text-gray-400">
+                                        <Package className="h-6 w-6" />
+                                      </div>
+                                    }
+                                  />
                                 )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-900 line-clamp-2">
+                                  {item.product_name_th || item.product_name_en}
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                  <span className="text-xs text-gray-500">{item.sku}</span>
+                                  {item.attribute_values && (
+                                    <span className="text-xs text-gray-400">• {item.attribute_values}</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-4">
@@ -941,8 +1043,13 @@ export default function OrdersPage() {
                               </span>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
+                    </div>
+                  ) : orderDetail.item_count > 0 ? (
+                    <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/80 py-8 px-4 text-center text-sm text-amber-900">
+                      ไม่สามารถโหลดรายการสินค้าได้ (ออเดอร์นี้มี {orderDetail.item_count} รายการในระบบ) — ลองปิดแล้วเปิดใหม่ หรือรีเฟรชหน้า
                     </div>
                   ) : (
                     <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-500">
@@ -997,7 +1104,7 @@ export default function OrdersPage() {
       <Modal
         isOpen={isEditModalOpen}
         onClose={handleCloseEdit}
-        title="เปลี่ยนสถานะออเดอร์"
+        title={orderToEdit?.order_status === 'delivered' ? 'สถานะออเดอร์' : 'เปลี่ยนสถานะออเดอร์'}
       >
         {orderToEdit && (
           <div className="space-y-6">
@@ -1010,54 +1117,77 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Visual flow */}
+            {/* Visual flow — vertical list so all steps fit without horizontal scroll */}
             <div>
               <p className="text-xs font-medium text-gray-500 mb-2">ขั้นตอนการดำเนินการ (ทำตามลำดับเท่านั้น)</p>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <ol className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 space-y-2">
                 {[
                   { key: 'pending', label: 'ยังไม่ดำเนินการ' },
                   { key: 'confirmed', label: 'ยืนยันออเดอร์' },
                   { key: 'shipped', label: 'กำลังจัดส่ง' },
                   { key: 'delivered', label: 'จัดส่งเสร็จสิ้น' },
                 ].map((step, index, arr) => {
-                  const current = orderToEdit.order_status === 'delivered' ? 'shipped' : orderToEdit.order_status;
+                  const current = orderToEdit.order_status;
                   const flowOrder = ['pending', 'confirmed', 'shipped', 'delivered'];
+                  const currentIdx = flowOrder.indexOf(current);
                   const isCurrent = step.key === current;
-                  const isPast = flowOrder.indexOf(step.key) < flowOrder.indexOf(current);
+                  const isPast = flowOrder.indexOf(step.key) < currentIdx;
+                  const segmentToNextDone = currentIdx > index;
 
-                  const baseClasses =
-                    'inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-[0.7rem] font-medium whitespace-nowrap border transition-colors';
-
-                  const stateClasses = isCurrent
-                    ? 'bg-pink-50 text-pink-700 border-pink-300 shadow-sm'
+                  const circleClass = isCurrent
+                    ? 'border-pink-400 bg-pink-50 text-pink-700 ring-2 ring-pink-100'
                     : isPast
-                    ? 'bg-green-50 text-green-700 border-green-200'
-                    : 'bg-gray-100 text-gray-400 border-gray-200';
+                      ? 'border-green-300 bg-green-50 text-green-800'
+                      : 'border-gray-200 bg-white text-gray-400';
+
+                  const rowClass = isCurrent
+                    ? 'border-pink-200 bg-pink-50/90 text-pink-900'
+                    : isPast
+                      ? 'border-green-200 bg-green-50/80 text-green-900'
+                      : 'border-gray-200 bg-white text-gray-500';
 
                   return (
-                    <div key={step.key} className="flex items-center gap-2">
-                      <div className={`${baseClasses} ${stateClasses}`}>
-                        <span
-                          className={`mr-1.5 h-4 w-4 rounded-full border text-[0.6rem] flex items-center justify-center ${
-                            isCurrent || isPast
-                              ? 'border-current bg-white/80'
-                              : 'border-gray-300 bg-white/40'
-                          }`}
+                    <li key={step.key} className="flex items-stretch gap-3">
+                      <div className="flex flex-col items-center shrink-0 w-9">
+                        <div
+                          className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors ${circleClass}`}
+                          aria-hidden
                         >
-                          {flowOrder.indexOf(step.key) + 1}
-                        </span>
-                        <span>{step.label}</span>
+                          {index + 1}
+                        </div>
+                        {index < arr.length - 1 && (
+                          <div
+                            className={`w-0.5 flex-1 min-h-[10px] mt-1 rounded-full ${
+                              segmentToNextDone ? 'bg-green-200' : 'bg-gray-200'
+                            }`}
+                            aria-hidden
+                          />
+                        )}
                       </div>
-                      {index < arr.length - 1 && (
-                        <span className="text-gray-300 text-xs shrink-0">→</span>
-                      )}
-                    </div>
+                      <div
+                        className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${rowClass}`}
+                      >
+                        <span className="font-medium leading-snug">{step.label}</span>
+                        <span className="shrink-0 flex items-center gap-1">
+                          {isPast && (
+                            <CheckCircle className="h-4 w-4 text-green-600" aria-label="ผ่านแล้ว" />
+                          )}
+                          {isCurrent && (
+                            <span className="text-xs font-semibold text-pink-600 whitespace-nowrap">ปัจจุบัน</span>
+                          )}
+                          {!isPast && !isCurrent && (
+                            <span className="text-xs text-gray-400 whitespace-nowrap">รอ</span>
+                          )}
+                        </span>
+                      </div>
+                    </li>
                   );
                 })}
-              </div>
+              </ol>
             </div>
 
-            {/* Next step - use buttons for clarity */}
+            {/* Next step — ซ่อนเมื่อจัดส่งครบแล้ว (สถานะสมบูรณ์) */}
+            {orderToEdit.order_status !== 'delivered' && (
             <div>
               <p className="text-sm font-semibold mb-2">เลือกขั้นตอนถัดไป</p>
               <div className="space-y-2">
@@ -1095,11 +1225,19 @@ export default function OrdersPage() {
                 </p>
               )}
             </div>
+            )}
+
+            {orderToEdit.order_status === 'delivered' && (
+              <p className="text-sm text-center rounded-lg bg-green-50 border border-green-100 text-green-800 py-3 px-4">
+                จัดส่งสำเร็จแล้ว — สถานะออเดอร์สมบูรณ์ ไม่มีขั้นตอนถัดไป
+              </p>
+            )}
 
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <Button variant="outline" onClick={handleCloseEdit}>
                 ปิด
               </Button>
+              {orderToEdit.order_status !== 'delivered' && (
               <Button 
                 onClick={handleSaveClick}
                 disabled={updating || !editStatus}
@@ -1107,6 +1245,7 @@ export default function OrdersPage() {
               >
                 {updating ? 'กำลังอัปเดต...' : 'บันทึก'}
               </Button>
+              )}
             </div>
           </div>
         )}
@@ -1171,6 +1310,35 @@ export default function OrdersPage() {
           </div>
         )}
       </Modal>
+
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="ดูรูปสินค้า"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/75"
+            onClick={() => setPreviewImage(null)}
+            aria-label="ปิด"
+          />
+          <button
+            type="button"
+            onClick={() => setPreviewImage(null)}
+            className="absolute right-4 top-4 z-[101] rounded-full bg-white/90 p-2 text-gray-800 shadow-lg transition hover:bg-white"
+            aria-label="ปิด"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={previewImage.url}
+            alt={previewImage.alt}
+            className="relative z-[101] max-h-[min(90vh,900px)] max-w-[min(92vw,1200px)] rounded-lg object-contain shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 }

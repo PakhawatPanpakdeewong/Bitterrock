@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS VariantReorderParams (
     WarehouseID INTEGER NOT NULL REFERENCES Warehouses(WarehouseID) ON DELETE CASCADE,
     DailyDemand DECIMAL(10,2) NOT NULL DEFAULT 5,
     LeadTimeDays INTEGER NOT NULL DEFAULT 7,
+    MaxLeadTimeDays INTEGER NOT NULL DEFAULT 7,
     SafetyStock INTEGER NOT NULL DEFAULT 10,
     OrderingCost DECIMAL(10,2) NOT NULL DEFAULT 100,
     HoldingCostPercent DECIMAL(5,2) NOT NULL DEFAULT 10,
@@ -335,8 +336,24 @@ CREATE TABLE IF NOT EXISTS Discounts (
     UsageLimit INTEGER,
     UsedCount INTEGER DEFAULT 0 CHECK (UsedCount >= 0),
     IsActive BOOLEAN DEFAULT true,
+    -- Optional scope: apply to specific product/variant
+    ProductID INTEGER REFERENCES Products(ProductID) ON DELETE SET NULL,
+    VariantID INTEGER REFERENCES ProductVariants(VariantID) ON DELETE SET NULL,
     CreatedDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- If variant is set, product must also be set
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'discounts_variant_requires_product'
+  ) THEN
+    ALTER TABLE Discounts
+      ADD CONSTRAINT discounts_variant_requires_product
+      CHECK (VariantID IS NULL OR ProductID IS NOT NULL);
+  END IF;
+END $$;
 
 -- Cancellation table
 CREATE TABLE IF NOT EXISTS Cancellation (
@@ -406,6 +423,8 @@ CREATE INDEX IF NOT EXISTS idx_discounts_minimum_order_amount ON Discounts(Minim
 CREATE INDEX IF NOT EXISTS idx_discounts_maximum_discount_amount ON Discounts(MaximumDiscountAmount);
 CREATE INDEX IF NOT EXISTS idx_discounts_start_date ON Discounts(StartDate);
 CREATE INDEX IF NOT EXISTS idx_discounts_end_date ON Discounts(EndDate);
+CREATE INDEX IF NOT EXISTS idx_discounts_product_id ON Discounts(ProductID);
+CREATE INDEX IF NOT EXISTS idx_discounts_variant_id ON Discounts(VariantID);
 CREATE INDEX IF NOT EXISTS idx_fetch_logs_source ON FetchLogs(Source);
 CREATE INDEX IF NOT EXISTS idx_fetch_logs_created_at ON FetchLogs(CreatedAt DESC);
 

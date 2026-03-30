@@ -2,7 +2,18 @@
  * Unit tests for lib/reorder-calc.ts - หน้าที่เกี่ยวข้อง: หน้า Reorder / เติมของ (app/reorder, API reorder)
  * Report: report_reorder-calc_reorder.md
  */
-import { calcROP, calcEOQ } from '../reorder-calc';
+import { calcROP, calcEOQ, calcSafetyStock } from '../reorder-calc';
+
+describe('calcSafetyStock', () => {
+  it('computes (maxDaily × maxLead) − (avgDaily × avgLead), floored at 0, ceil', () => {
+    expect(calcSafetyStock(10, 14, 5, 7)).toBe(105); // 140 - 35
+    expect(calcSafetyStock(2, 5, 1, 4)).toBe(6); // 10 - 4
+  });
+
+  it('returns 0 when formula is negative', () => {
+    expect(calcSafetyStock(1, 3, 5, 5)).toBe(0); // 3 - 25
+  });
+});
 
 describe('calcROP (Reorder Point)', () => {
   it('computes ROP = ceil(dailyDemand * leadTime + safetyStock)', () => {

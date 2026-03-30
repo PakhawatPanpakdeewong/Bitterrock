@@ -3,6 +3,12 @@ import { query } from '../../../database/connection';
 import { getCurrentUser } from '@/lib/auth';
 import { logStaffActivity } from '@/database/activity-log';
 
+/** ไม่แคชผลลัพธ์ — ยอด/รายการต้องตรงกับฐานข้อมูลล่าสุด */
+export const dynamic = 'force-dynamic';
+
+/** ใช้กับ orderdate (timestamptz) เพื่อให้ "วันนี้ / เดือนนี้" ตรงกับปฏิทินไทย ไม่เพี้ยนเพราะ UTC */
+const TZ_STORE = 'Asia/Bangkok';
+
 type DbOrder = {
   order_id: number;
   customer_id: number;
@@ -28,9 +34,17 @@ export async function GET(req: NextRequest) {
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const dateFilter = searchParams.get('date');
 
     const params: any[] = [];
     let whereConditions: string[] = [];
+
+    if (dateFilter === 'today') {
+      whereConditions.push(
+        `(timezone($${params.length + 1}, o.orderdate))::date = (timezone($${params.length + 1}, now()))::date`
+      );
+      params.push(TZ_STORE);
+    }
 
     if (status && status !== 'all') {
       if (status === 'shipped') {
@@ -79,7 +93,7 @@ export async function GET(req: NextRequest) {
           WHEN o.orderstatus = 'pending' THEN 'pending'
           WHEN o.orderstatus = 'confirmed' THEN 'confirmed'
           WHEN o.orderstatus = 'shipped' THEN 'shipped'
-          WHEN o.orderstatus = 'delivered' THEN 'shipped'
+          WHEN o.orderstatus = 'delivered' THEN 'delivered'
           ELSE 'pending'
         END as delivery_status
       FROM orders o
@@ -96,24 +110,34 @@ export async function GET(req: NextRequest) {
 
     const orders = ordersRes.rows as unknown as DbOrder[];
 
-    // Get summary statistics (today + this month)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString();
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthStartStr = monthStart.toISOString();
-
+    // สถิติ "วันนี้ / เดือนนี้" ตามปฏิทินไทย (สอดคล้องกับตัวกรอง date=today)
     const statsRes = await query(
       `SELECT 
-        COUNT(*) FILTER (WHERE DATE(o.orderdate) = DATE($1)) as orders_today,
-        COUNT(*) FILTER (WHERE o.orderstatus = 'pending' AND DATE(o.orderdate) = DATE($1)) as pending_today,
-        COUNT(*) FILTER (WHERE o.orderstatus IN ('confirmed', 'shipped', 'delivered') AND DATE(o.orderdate) = DATE($1)) as successful_today,
-        COALESCE(SUM(o.totalamount) FILTER (WHERE DATE(o.orderdate) = DATE($1)), 0) as sales_today,
-        COUNT(*) FILTER (WHERE o.orderdate >= $2) as orders_this_month,
-        COALESCE(SUM(o.totalamount) FILTER (WHERE o.orderdate >= $2), 0) as sales_this_month,
+        COUNT(*) FILTER (
+          WHERE (timezone($1, o.orderdate))::date = (timezone($1, now()))::date
+        ) as orders_today,
+        COUNT(*) FILTER (
+          WHERE o.orderstatus = 'pending'
+          AND (timezone($1, o.orderdate))::date = (timezone($1, now()))::date
+        ) as pending_today,
+        COUNT(*) FILTER (
+          WHERE o.orderstatus IN ('confirmed', 'shipped', 'delivered')
+          AND (timezone($1, o.orderdate))::date = (timezone($1, now()))::date
+        ) as successful_today,
+        COALESCE(SUM(o.totalamount) FILTER (
+          WHERE (timezone($1, o.orderdate))::date = (timezone($1, now()))::date
+        ), 0) as sales_today,
+        COUNT(*) FILTER (
+          WHERE (timezone($1, o.orderdate))::date >= (date_trunc('month', timezone($1, now())))::date
+          AND (timezone($1, o.orderdate))::date < (date_trunc('month', timezone($1, now())) + interval '1 month')::date
+        ) as orders_this_month,
+        COALESCE(SUM(o.totalamount) FILTER (
+          WHERE (timezone($1, o.orderdate))::date >= (date_trunc('month', timezone($1, now())))::date
+          AND (timezone($1, o.orderdate))::date < (date_trunc('month', timezone($1, now())) + interval '1 month')::date
+        ), 0) as sales_this_month,
         COUNT(*) FILTER (WHERE o.orderstatus = 'pending') as total_pending
       FROM orders o`,
-      [todayStr, monthStartStr]
+      [TZ_STORE]
     );
 
     const stats = statsRes.rows[0];

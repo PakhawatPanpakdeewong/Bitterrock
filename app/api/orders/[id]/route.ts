@@ -6,6 +6,7 @@ export type OrderItemDetail = {
   product_name_th: string;
   product_name_en: string;
   sku: string;
+  image_url: string | null;
   quantity_ordered: number;
   unit_price: number;
   total_price: number;
@@ -67,7 +68,7 @@ export async function GET(
           WHEN o.orderstatus = 'pending' THEN 'pending'
           WHEN o.orderstatus = 'confirmed' THEN 'confirmed'
           WHEN o.orderstatus = 'shipped' THEN 'shipped'
-          WHEN o.orderstatus = 'delivered' THEN 'shipped'
+          WHEN o.orderstatus = 'delivered' THEN 'delivered'
           ELSE 'pending'
         END as delivery_status,
         (SELECT s.trackingnumber FROM shipments s WHERE s.orderid = o.orderid ORDER BY s.shipmentid DESC LIMIT 1) as tracking_number
@@ -94,6 +95,7 @@ export async function GET(
           p.productnameth as product_name_th,
           p.productnameen as product_name_en,
           pv.sku as sku,
+          NULL::text as image_url,
           oi.quantityordered as quantity_ordered,
           oi.unitprice::numeric as unit_price,
           oi.totalprice::numeric as total_price,

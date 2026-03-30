@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
+import { forbidStaffApi } from '@/lib/staff-api-guard';
 
 type DbWarehouse = {
   warehouse_id: number;
@@ -54,6 +55,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await forbidStaffApi();
+    if (denied) return denied;
+
     const body = await req.json();
     const {
       warehouse_name,
@@ -181,6 +185,9 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const denied = await forbidStaffApi();
+    if (denied) return denied;
+
     const { searchParams } = new URL(req.url);
     const idParam = searchParams.get('id');
     let warehouse_id: number | null = idParam ? Number(idParam) : null;

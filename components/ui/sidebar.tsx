@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { Percent, LayoutGrid } from 'lucide-react';
 import { cn } from '@/components/utils/cn';
 import { useSidebar } from './sidebar-context';
 
@@ -41,9 +42,7 @@ const menuGroups: MenuGroup[] = [
         </svg>
       )},
       { name: 'โปรโมชั่นและส่วนลด', href: '/promotions', icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-        </svg>
+        <Percent className="w-4 h-4 shrink-0" strokeWidth={2} aria-hidden />
       )},
       { name: 'ตรวจสอบรีวิว', href: '/reviews', icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,9 +65,7 @@ const menuGroups: MenuGroup[] = [
         </svg>
       )},
       { name: 'ประเภทสินค้า', href: '/categories', icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-        </svg>
+        <LayoutGrid className="w-4 h-4 shrink-0" strokeWidth={2} aria-hidden />
       )},
       { name: 'สินค้าทั้งหมด', href: '/products', icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,14 +211,20 @@ export function Sidebar() {
       <div className="overflow-y-auto h-[calc(100vh-8rem)] py-4">
         {menuGroups.map((group) => {
           // Filter menu items based on user role
+          const staffHiddenHrefs = [
+            '/promotions',
+            '/sales-summary',
+            '/warehouse-stock',
+            '/reorder',
+            '/user-permissions',
+          ] as const;
+
           const filteredItems = group.items.filter((item) => {
-            // Hide "จัดการสิทธิ์การเข้าถึง" for staff
-            if ('href' in item && item.href === '/user-permissions') {
-              return userRole !== 'staff';
-            }
-            // Hide "บันทึกการดึงข้อมูลไม่สำเร็จ" for non-admin
             if ('href' in item && item.href === '/fetch-logs') {
               return userRole === 'admin';
+            }
+            if ('href' in item && staffHiddenHrefs.includes(item.href as (typeof staffHiddenHrefs)[number])) {
+              return userRole !== 'staff';
             }
             return true;
           });

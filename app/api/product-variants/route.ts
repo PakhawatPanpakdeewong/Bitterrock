@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const productId = searchParams.get('product_id');
+    const variantId = searchParams.get('variant_id');
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 30)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
 
@@ -53,6 +54,14 @@ export async function GET(req: NextRequest) {
     if (productId) {
       conditions.push(`pv.productid = $${params.length + 1}`);
       params.push(Number(productId));
+    }
+
+    if (variantId) {
+      const n = Number(variantId);
+      if (!Number.isNaN(n)) {
+        conditions.push(`pv.variantid = $${params.length + 1}`);
+        params.push(n);
+      }
     }
     
     if (categoryId && categoryId !== 'all') {
@@ -133,6 +142,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'sku is required' }, { status: 400 });
     }
 
+    const priceNum = Number(price);
+    const costParsed =
+      cost != null && !Number.isNaN(Number(cost)) ? Number(cost) : null;
+    if (costParsed != null && costParsed > priceNum) {
+      return NextResponse.json(
+        { ok: false, error: 'ต้นทุนต้องไม่มากกว่าราคา' },
+        { status: 400 }
+      );
+    }
+
     // Normalize attribute_value_ids to array
     const attributeValueIds = Array.isArray(attribute_value_ids) 
       ? attribute_value_ids 
@@ -145,7 +164,13 @@ export async function POST(req: NextRequest) {
       `INSERT INTO productvariants (productid, sku, price, cost, isactive)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING variantid as variant_id`,
-      [Number(product_id), sku, Number(price), cost != null && !Number.isNaN(Number(cost)) ? Number(cost) : null, is_active]
+      [
+        Number(product_id),
+        sku,
+        priceNum,
+        costParsed,
+        is_active,
+      ]
     );
 
     const variantId = insertRes.rows[0].variant_id;
@@ -181,13 +206,18 @@ export async function PUT(req: NextRequest) {
 
     // Get current variant state to check if is_active is changing
     const currentVariantRes = await query(
-      `SELECT isactive FROM productvariants WHERE variantid = $1`,
+      `SELECT isactive, price, cost FROM productvariants WHERE variantid = $1`,
       [variant_id]
     );
     if (currentVariantRes.rows.length === 0) {
       return NextResponse.json({ ok: false, error: 'Variant not found' }, { status: 404 });
     }
-    const currentIsActive = currentVariantRes.rows[0]?.isactive ?? false;
+    const currentRow = currentVariantRes.rows[0] as {
+      isactive: boolean;
+      price: string | number;
+      cost: string | number | null;
+    };
+    const currentIsActive = currentRow?.isactive ?? false;
     const newIsActive = body?.is_active;
 
     const fields: string[] = [];
@@ -210,6 +240,21 @@ export async function PUT(req: NextRequest) {
       image_url: body?.image_url,
       is_active: body?.is_active,
     } as Record<string, any>;
+
+    const mergedPrice =
+      updatable.price !== undefined ? updatable.price : Number(currentRow.price);
+    const mergedCost =
+      updatable.cost !== undefined
+        ? updatable.cost
+        : currentRow.cost != null && !Number.isNaN(Number(currentRow.cost))
+          ? Number(currentRow.cost)
+          : null;
+    if (mergedCost != null && !Number.isNaN(mergedCost) && mergedCost > mergedPrice) {
+      return NextResponse.json(
+        { ok: false, error: 'ต้นทุนต้องไม่มากกว่าราคา' },
+        { status: 400 }
+      );
+    }
 
     for (const [key, value] of Object.entries(updatable)) {
       if (value !== undefined) {

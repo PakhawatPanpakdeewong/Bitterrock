@@ -3,6 +3,21 @@
  * ใช้โดย app/api/reorder/route.ts หน้า Reorder / เติมของ
  */
 
+/**
+ * Safety stock = (ยอดขายสูงสุดต่อวัน × ระยะนำส่งสูงสุด) − (ยอดขายเฉลี่ยต่อวัน × ระยะนำส่งเฉลี่ย)
+ * ค่าติดลบปรับเป็น 0; ปัดขึ้นเป็นจำนวนเต็ม
+ */
+export function calcSafetyStock(
+  maxDailySales: number,
+  maxLeadTimeDays: number,
+  avgDailySales: number,
+  avgLeadTimeDays: number
+): number {
+  const raw =
+    maxDailySales * maxLeadTimeDays - avgDailySales * avgLeadTimeDays;
+  return Math.max(0, Math.ceil(raw));
+}
+
 /** Reorder Point = (Daily Demand × Lead Time) + Safety Stock (ปัดขึ้น) */
 export function calcROP(
   dailyDemand: number,

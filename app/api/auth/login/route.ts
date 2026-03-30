@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create session
-    await createSession(dbUser.staffid);
+    await createSession(dbUser.staffid, dbUser.staffrole);
     
     // Update last login
     await updateLastLogin(dbUser.staffid);

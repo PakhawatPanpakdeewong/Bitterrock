@@ -51,6 +51,11 @@ export async function POST(
       [orderId]
     );
 
+    await query(
+      `UPDATE orders SET orderstatus = 'delivered', updateddate = CURRENT_TIMESTAMP WHERE orderid = $1`,
+      [orderId]
+    );
+
     const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null;
     await logStaffActivity({
       user,

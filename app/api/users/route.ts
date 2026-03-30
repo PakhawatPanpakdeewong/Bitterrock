@@ -13,6 +13,10 @@ type DbUser = {
   last_login: string | null;
 };
 
+function roleKey(role: string): string {
+  return role.toLowerCase();
+}
+
 export async function GET(req: NextRequest) {
   try {
     // Check authentication
@@ -24,13 +28,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const actorRole = roleKey(currentUser.StaffRole);
+
     // Block staff from accessing user data
-    if (currentUser.StaffRole === 'staff') {
+    if (actorRole === 'staff') {
       return NextResponse.json(
         { ok: false, error: 'Forbidden: Staff cannot access this page' },
         { status: 403 }
       );
     }
+
+    const isManager = actorRole === 'manager';
 
     const { searchParams } = new URL(req.url);
     const searchTerm = searchParams.get('search') || '';
@@ -52,6 +60,11 @@ export async function GET(req: NextRequest) {
     const params: any[] = [];
     let paramIndex = 1;
 
+    // Managers must never see admin accounts
+    if (isManager) {
+      sql += ` AND LOWER(staffrole) <> 'admin'`;
+    }
+
     // Search filter
     if (searchTerm) {
       sql += ` AND (username ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
@@ -61,9 +74,13 @@ export async function GET(req: NextRequest) {
 
     // Role filter
     if (roleFilter !== 'all') {
-      sql += ` AND staffrole = $${paramIndex}`;
-      params.push(roleFilter);
-      paramIndex++;
+      if (isManager && roleKey(roleFilter) === 'admin') {
+        sql += ` AND 1=0`;
+      } else {
+        sql += ` AND LOWER(staffrole) = $${paramIndex}`;
+        params.push(roleKey(roleFilter));
+        paramIndex++;
+      }
     }
 
     sql += ` ORDER BY createddate DESC`;
@@ -88,14 +105,25 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    // Count users by role
-    const roleCounts = await query(`
+    // Count users by role (managers never receive admin counts)
+    const roleCounts = await query(
+      isManager
+        ? `
+      SELECT 
+        staffrole,
+        COUNT(*) as count
+      FROM staffusers
+      WHERE LOWER(staffrole) <> 'admin'
+      GROUP BY staffrole
+    `
+        : `
       SELECT 
         staffrole,
         COUNT(*) as count
       FROM staffusers
       GROUP BY staffrole
-    `);
+    `
+    );
 
     const roleStats: Record<string, number> = {
       admin: 0,
@@ -140,10 +168,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Only admin can create users
-    if (currentUser.StaffRole !== 'admin') {
+    const actorRole = roleKey(currentUser.StaffRole);
+    if (actorRole !== 'admin' && actorRole !== 'manager') {
       return NextResponse.json(
-        { ok: false, error: 'Forbidden: Only admin can create users' },
+        { ok: false, error: 'Forbidden: Only admin or manager can create users' },
         { status: 403 }
       );
     }
@@ -158,8 +186,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const roleNorm = role.toLowerCase();
+    // Managers may only create staff accounts
+    if (actorRole === 'manager' && roleNorm !== 'staff') {
+      return NextResponse.json(
+        { ok: false, error: 'Forbidden: Managers can only create staff accounts' },
+        { status: 403 }
+      );
+    }
+
     // Validate role
-    if (!['admin', 'manager', 'staff'].includes(role.toLowerCase())) {
+    if (!['admin', 'manager', 'staff'].includes(roleNorm)) {
       return NextResponse.json(
         { ok: false, error: 'บทบาทไม่ถูกต้อง' },
         { status: 400 }
@@ -187,7 +224,7 @@ export async function POST(req: NextRequest) {
       `INSERT INTO staffusers (username, email, passwordhash, staffrole, staffstatus)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING staffid as staff_id`,
-      [name, email, passwordHash, role.toLowerCase(), 'active']
+      [name, email, passwordHash, roleNorm, 'active']
     );
 
     const newId = insertRes.rows[0]?.staff_id;
@@ -223,12 +260,47 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Only admin can edit users
-    if (currentUser.StaffRole !== 'admin') {
+    const actorRole = roleKey(currentUser.StaffRole);
+    if (actorRole !== 'admin' && actorRole !== 'manager') {
       return NextResponse.json(
-        { ok: false, error: 'Forbidden: Only admin can edit users' },
+        { ok: false, error: 'Forbidden: Only admin or manager can edit users' },
         { status: 403 }
       );
+    }
+
+    const targetRes = await query(
+      'SELECT staffid, staffrole FROM staffusers WHERE staffid = $1',
+      [id]
+    );
+    if (targetRes.rows.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'ไม่พบผู้ใช้งาน' },
+        { status: 404 }
+      );
+    }
+    const targetRole = roleKey(targetRes.rows[0].staffrole);
+
+    if (actorRole === 'manager') {
+      if (targetRole === 'admin') {
+        return NextResponse.json(
+          { ok: false, error: 'Forbidden: Managers cannot modify admin accounts' },
+          { status: 403 }
+        );
+      }
+      const isSelf = currentUser.StaffID === id;
+      // Managers may edit STAFF accounts, or their own MANAGER account (not other managers)
+      if (!isSelf && targetRole !== 'staff') {
+        return NextResponse.json(
+          { ok: false, error: 'Forbidden: Managers can only edit staff accounts or their own account' },
+          { status: 403 }
+        );
+      }
+      if (role !== undefined) {
+        return NextResponse.json(
+          { ok: false, error: 'Forbidden: Managers cannot change user roles' },
+          { status: 403 }
+        );
+      }
     }
 
     const fields: string[] = [];
@@ -259,8 +331,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (role !== undefined) {
-      // Only admin can change roles
-      if (currentUser.StaffRole !== 'admin') {
+      if (actorRole !== 'admin') {
         return NextResponse.json(
           { ok: false, error: 'Forbidden: Only admin can change roles' },
           { status: 403 }
@@ -287,10 +358,9 @@ export async function PUT(req: NextRequest) {
     }
 
     if (status !== undefined) {
-      // Only admin can change status
-      if (currentUser.StaffRole !== 'admin') {
+      if (actorRole !== 'admin' && actorRole !== 'manager') {
         return NextResponse.json(
-          { ok: false, error: 'Forbidden: Only admin can change status' },
+          { ok: false, error: 'Forbidden: Only admin or manager can change status' },
           { status: 403 }
         );
       }
@@ -302,15 +372,28 @@ export async function PUT(req: NextRequest) {
         );
       }
 
+      if (
+        actorRole === 'manager' &&
+        currentUser.StaffID === id &&
+        status === 'inactive'
+      ) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'ไม่สามารถปิดการใช้งานบัญชีของตัวเองได้',
+          },
+          { status: 400 }
+        );
+      }
+
       fields.push(`staffstatus = $${idx++}`);
       values.push(status);
     }
 
     if (password !== undefined && password !== '') {
-      // Only admin can change passwords
-      if (currentUser.StaffRole !== 'admin') {
+      if (actorRole !== 'admin' && actorRole !== 'manager') {
         return NextResponse.json(
-          { ok: false, error: 'Forbidden: Only admin can change passwords' },
+          { ok: false, error: 'Forbidden: Only admin or manager can change passwords' },
           { status: 403 }
         );
       }

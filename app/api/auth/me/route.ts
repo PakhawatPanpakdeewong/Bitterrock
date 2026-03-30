@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getStaffRoleCookieOptions, STAFF_ROLE_COOKIE_NAME } from '@/lib/auth';
 
 export async function GET() {
   try {
@@ -12,7 +12,7 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       ok: true,
       user: {
         StaffID: user.StaffID,
@@ -21,6 +21,8 @@ export async function GET() {
         StaffRole: user.StaffRole,
       },
     });
+    res.cookies.set(STAFF_ROLE_COOKIE_NAME, user.StaffRole.toLowerCase(), getStaffRoleCookieOptions());
+    return res;
   } catch (error) {
     console.error('Get current user error:', error);
     return NextResponse.json(

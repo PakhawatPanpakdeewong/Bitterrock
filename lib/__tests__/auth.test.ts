@@ -11,6 +11,7 @@ import {
   deleteSession,
   updateLastLogin,
   isAdmin,
+  isStaff,
 } from '../auth';
 
 jest.mock('next/headers', () => ({
@@ -34,6 +35,18 @@ describe('isAdmin', () => {
   it('returns false when StaffRole is not admin', () => {
     expect(isAdmin({ StaffID: 1, Username: 'a', Email: 'a@x.com', StaffRole: 'staff', StaffStatus: 'active' })).toBe(false);
     expect(isAdmin({ StaffID: 1, Username: 'a', Email: 'a@x.com', StaffRole: '', StaffStatus: 'active' })).toBe(false);
+  });
+});
+
+describe('isStaff', () => {
+  it('returns true when StaffRole is staff (case insensitive)', () => {
+    expect(isStaff({ StaffID: 1, Username: 'a', Email: 'a@x.com', StaffRole: 'staff', StaffStatus: 'active' })).toBe(true);
+    expect(isStaff({ StaffID: 1, Username: 'a', Email: 'a@x.com', StaffRole: 'STAFF', StaffStatus: 'active' })).toBe(true);
+  });
+
+  it('returns false for manager or admin', () => {
+    expect(isStaff({ StaffID: 1, Username: 'a', Email: 'a@x.com', StaffRole: 'manager', StaffStatus: 'active' })).toBe(false);
+    expect(isStaff({ StaffID: 1, Username: 'a', Email: 'a@x.com', StaffRole: 'admin', StaffStatus: 'active' })).toBe(false);
   });
 });
 
@@ -149,6 +162,17 @@ describe('createSession', () => {
     await createSession(99);
     expect(mockSet).toHaveBeenCalledWith('userId', '99', expect.any(Object));
   });
+
+  it('sets staffRole cookie when role provided', async () => {
+    const mockSet = jest.fn();
+    (cookies as jest.Mock).mockResolvedValue({
+      set: mockSet,
+      get: jest.fn(),
+      delete: jest.fn(),
+    });
+    await createSession(1, 'Manager');
+    expect(mockSet).toHaveBeenCalledWith('staffRole', 'manager', expect.any(Object));
+  });
 });
 
 describe('getCurrentUser', () => {
@@ -241,8 +265,10 @@ describe('deleteSession', () => {
     await deleteSession();
     expect(mockDelete).toHaveBeenCalledWith('session');
     expect(mockDelete).toHaveBeenCalledWith('userId');
+    expect(mockDelete).toHaveBeenCalledWith('staffRole');
     expect(mockSet).toHaveBeenCalledWith('session', '', { maxAge: 0 });
     expect(mockSet).toHaveBeenCalledWith('userId', '', { maxAge: 0 });
+    expect(mockSet).toHaveBeenCalledWith('staffRole', '', { maxAge: 0, path: '/' });
   });
 });
 

@@ -27,3 +27,21 @@ export function formatDate(dateString: string | null | undefined): string {
     return 'N/A';
   }
 }
+
+/** วันเวลาแบบสั้น ใช้ในตารางแคบ (แดชบอร์ด ฯลฯ) */
+export function formatDateTimeCompactTh(dateString: string | null | undefined): string {
+  if (dateString == null || dateString === '') return 'N/A';
+  try {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return new Intl.DateTimeFormat('th-TH', {
+      day: 'numeric',
+      month: 'short',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  } catch {
+    return 'N/A';
+  }
+}

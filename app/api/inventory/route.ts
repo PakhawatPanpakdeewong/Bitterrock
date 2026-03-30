@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const warehouseId = searchParams.get('warehouse_id');
     const variantId = searchParams.get('variant_id');
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 50)));
+    /** แดชบอร์ดขอ limit สูงเพื่อสรุปสต็อก — ค่าสูงสุดกันหน่วง query โดยไม่จำเป็น */
+    const limit = Math.min(10000, Math.max(1, Number(searchParams.get('limit') || 50)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
 
     const params: any[] = [];

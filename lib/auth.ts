@@ -15,6 +15,25 @@ export function isAdmin(user: StaffUser): boolean {
   return user.StaffRole.toLowerCase() === 'admin';
 }
 
+/** บทบาท staff ธรรมดา — จำกัดหน้า/API บางส่วน */
+export function isStaff(user: StaffUser): boolean {
+  return user.StaffRole.toLowerCase() === 'staff';
+}
+
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+
+export function getStaffRoleCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: AUTH_COOKIE_MAX_AGE,
+    path: '/',
+  };
+}
+
+export const STAFF_ROLE_COOKIE_NAME = 'staffRole';
+
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
@@ -48,21 +67,20 @@ export async function getUserByUsernameOrEmail(usernameOrEmail: string): Promise
   }
 }
 
-export async function createSession(userId: number): Promise<string> {
+export async function createSession(userId: number, staffRole?: string): Promise<string> {
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const cookieStore = await cookies();
-  cookieStore.set('session', sessionId, {
+  const opts = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  });
-  cookieStore.set('userId', userId.toString(), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  });
+    sameSite: 'lax' as const,
+    maxAge: AUTH_COOKIE_MAX_AGE,
+  };
+  cookieStore.set('session', sessionId, opts);
+  cookieStore.set('userId', userId.toString(), opts);
+  if (staffRole) {
+    cookieStore.set(STAFF_ROLE_COOKIE_NAME, staffRole.toLowerCase(), getStaffRoleCookieOptions());
+  }
   return sessionId;
 }
 
@@ -102,9 +120,11 @@ export async function deleteSession(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete('session');
   cookieStore.delete('userId');
+  cookieStore.delete(STAFF_ROLE_COOKIE_NAME);
   // Force cookie deletion by setting empty values with past expiration
   cookieStore.set('session', '', { maxAge: 0 });
   cookieStore.set('userId', '', { maxAge: 0 });
+  cookieStore.set(STAFF_ROLE_COOKIE_NAME, '', { maxAge: 0, path: '/' });
 }
 
 export async function updateLastLogin(userId: number): Promise<void> {

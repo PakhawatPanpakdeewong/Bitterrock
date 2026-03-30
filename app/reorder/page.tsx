@@ -24,6 +24,7 @@ import {
 import { Modal } from '@/components/ui/modal';
 import { useNotification } from '@/components/ui/notification';
 import { Label } from '@/components/ui/label';
+import { calcSafetyStock } from '@/lib/reorder-calc';
 
 type ReorderItem = {
   inventory_id: number;
@@ -39,14 +40,27 @@ type ReorderItem = {
   sub_category_name: string | null;
   variant_sku: string | null;
   price: number | null;
+  /** ต้นทุนต่อหน่วยจากฐานข้อมูล (ใช้คำนวณค่าแนะนำ EOQ) */
+  variant_cost: number;
   warehouse_name: string;
   attribute_value_th?: string | null;
+  sales_stats: {
+    lookback_days: number;
+    avg_daily_sales: number;
+    max_daily_sales: number;
+    total_qty_period: number;
+  };
   reorder_params: {
-    daily_demand: number;
     lead_time_days: number;
+    max_lead_time_days: number;
     safety_stock: number;
     ordering_cost: number;
     holding_cost_percent: number;
+  };
+  safety_stock: {
+    insufficient_sales_history: boolean;
+    formula_value: number | null;
+    effective: number;
   };
   has_custom_params: boolean;
   rop: number;
@@ -56,8 +70,8 @@ type ReorderItem = {
 };
 
 type ReorderParams = {
-  daily_demand: number;
   lead_time_days: number;
+  max_lead_time_days: number;
   safety_stock: number;
   ordering_cost: number;
   holding_cost_percent: number;
@@ -95,16 +109,20 @@ function SettingsModalContent({
   const holdingCostPerUnit =
     unitPrice > 0 ? unitPrice * (editParams.holding_cost_percent / 100) : editParams.ordering_cost * 0.1;
 
-  const previewROP = calcROP(
-    editParams.daily_demand,
-    editParams.lead_time_days,
-    editParams.safety_stock
-  );
-  const previewEOQ = calcEOQ(
-    editParams.daily_demand,
-    editParams.ordering_cost,
-    holdingCostPerUnit
-  );
+  const avgDaily = editingItem?.sales_stats.avg_daily_sales ?? 0;
+  const maxDaily = editingItem?.sales_stats.max_daily_sales ?? 0;
+  const insufficient = editingItem?.safety_stock.insufficient_sales_history ?? true;
+  const previewSafety = insufficient
+    ? editParams.safety_stock
+    : calcSafetyStock(
+        maxDaily,
+        editParams.max_lead_time_days,
+        avgDaily,
+        editParams.lead_time_days
+      );
+
+  const previewROP = calcROP(avgDaily, editParams.lead_time_days, previewSafety);
+  const previewEOQ = calcEOQ(avgDaily, editParams.ordering_cost, holdingCostPerUnit);
 
   const beforeROP = editingItem?.rop ?? previewROP;
   const beforeEOQ = editingItem?.eoq ?? previewEOQ;
@@ -119,22 +137,24 @@ function SettingsModalContent({
           <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
             พารามิเตอร์สำหรับ ROP (จุดสั่งซื้อ)
           </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <Label className="text-xs">ความต้องการต่อวัน (หน่วย)</Label>
-              <Input
-                type="number"
-                min={0}
-                step={0.5}
-                value={editParams.daily_demand}
-                onChange={(e) =>
-                  setEditParams((p) => ({ ...p, daily_demand: Number(e.target.value) || 0 }))
-                }
-                className="mt-1"
-              />
+          {editingItem && (
+            <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700 space-y-1">
+              <p>
+                <span className="font-medium">ยอดขายจากฐานข้อมูล</span> (ย้อนหลัง {editingItem.sales_stats.lookback_days}{' '}
+                วัน): ยอดเฉลี่ยต่อวัน {avgDaily.toLocaleString('th-TH', { maximumFractionDigits: 2 })} หน่วย
+                {' · '}
+                ยอดสูงสุดต่อวัน {maxDaily.toLocaleString('th-TH', { maximumFractionDigits: 2 })} หน่วย
+              </p>
+              {insufficient && (
+                <p className="text-amber-800">
+                  ไม่มียอดขายในช่วงนี้ (สินค้าใหม่หรือยังไม่มีประวัติ) — แนะนำกรอกสต็อกความปลอดภัยเอง
+                </p>
+              )}
             </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">ระยะเวลานำเข้าสินค้า (วัน)</Label>
+              <Label className="text-xs">ระยะเวลานำส่งเฉลี่ย (วัน)</Label>
               <Input
                 type="number"
                 min={0}
@@ -146,17 +166,38 @@ function SettingsModalContent({
               />
             </div>
             <div>
-              <Label className="text-xs">สต็อกความปลอดภัย (หน่วย)</Label>
+              <Label className="text-xs">ระยะเวลานำส่งสูงสุด (วัน)</Label>
               <Input
                 type="number"
                 min={0}
-                value={editParams.safety_stock}
+                value={editParams.max_lead_time_days}
                 onChange={(e) =>
-                  setEditParams((p) => ({ ...p, safety_stock: Number(e.target.value) || 0 }))
+                  setEditParams((p) => ({
+                    ...p,
+                    max_lead_time_days: Number(e.target.value) || 0,
+                  }))
                 }
                 className="mt-1"
               />
             </div>
+          </div>
+          <div>
+            <Label className="text-xs">
+              สต็อกความปลอดภัย (หน่วย)
+              {!insufficient && (
+                <span className="font-normal text-gray-500"> — คำนวณอัตโนมัติจากสูตร (ล็อก)</span>
+              )}
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              value={insufficient ? editParams.safety_stock : previewSafety}
+              onChange={(e) =>
+                setEditParams((p) => ({ ...p, safety_stock: Number(e.target.value) || 0 }))
+              }
+              disabled={!insufficient}
+              className="mt-1"
+            />
           </div>
         </div>
 
@@ -170,12 +211,28 @@ function SettingsModalContent({
               ราคาต่อหน่วย: ฿{unitPrice.toLocaleString('th-TH')} — ค่าเก็บรักษา = ราคา × {editParams.holding_cost_percent}%
             </p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-3">
             <div>
               <Label className="text-xs">ค่าคำสั่งซื้อต่อครั้ง (บาท)</Label>
+              {editingItem && (
+                <div className="text-[0.65rem] text-slate-500 mt-0.5 space-y-0.5 leading-snug">
+                  <p>ค่าเริ่มต้นจากระบบ: ต้นทุน × จำนวนสต็อกคงคลัง</p>
+                  <p>
+                    {editingItem.variant_cost.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ×{' '}
+                    {editingItem.stock_quantity} ={' '}
+                    {(Math.round(editingItem.variant_cost * editingItem.stock_quantity * 100) / 100).toLocaleString('th-TH', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })}{' '}
+                    บาท
+                  </p>
+                  <p className="text-slate-600">(แก้ไขได้)</p>
+                </div>
+              )}
               <Input
                 type="number"
                 min={0}
+                step={0.01}
                 value={editParams.ordering_cost}
                 onChange={(e) =>
                   setEditParams((p) => ({ ...p, ordering_cost: Number(e.target.value) || 0 }))
@@ -269,8 +326,8 @@ export default function ReorderPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ReorderItem | null>(null);
   const [editParams, setEditParams] = useState<ReorderParams>({
-    daily_demand: 5,
     lead_time_days: 7,
+    max_lead_time_days: 7,
     safety_stock: 10,
     ordering_cost: 100,
     holding_cost_percent: 10,
@@ -289,10 +346,15 @@ export default function ReorderPage() {
         setItems(data.items || []);
       } else {
         setItems([]);
+        notify(
+          `โหลดรายการไม่สำเร็จ: ${data.error || 'ไม่ทราบสาเหตุ'} — ตรวจสอบการเชื่อมต่อฐานข้อมูลหรือรัน migration (คอลัมน์ maxleadtimedays)`,
+          { type: 'error' }
+        );
       }
     } catch (error) {
       console.error('Error fetching reorder data:', error);
       setItems([]);
+      notify('โหลดรายการไม่สำเร็จ (เครือข่ายหรือเซิร์ฟเวอร์)', { type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -302,8 +364,8 @@ export default function ReorderPage() {
     setEditingItem(item);
     setEditParams(
       item?.reorder_params ?? {
-        daily_demand: 5,
         lead_time_days: 7,
+        max_lead_time_days: 7,
         safety_stock: 10,
         ordering_cost: 100,
         holding_cost_percent: 10,
@@ -324,10 +386,26 @@ export default function ReorderPage() {
     }
     try {
       setSaving(true);
+      const avgDaily = editingItem.sales_stats.avg_daily_sales;
+      const maxDaily = editingItem.sales_stats.max_daily_sales;
+      const insufficient = editingItem.safety_stock.insufficient_sales_history;
+      const safetyToSave = insufficient
+        ? editParams.safety_stock
+        : calcSafetyStock(
+            maxDaily,
+            editParams.max_lead_time_days,
+            avgDaily,
+            editParams.lead_time_days
+          );
+
       const payload = {
         variant_id: editingItem.variant_id,
         warehouse_id: editingItem.warehouse_id,
-        ...editParams,
+        lead_time_days: editParams.lead_time_days,
+        max_lead_time_days: editParams.max_lead_time_days,
+        safety_stock: safetyToSave,
+        ordering_cost: editParams.ordering_cost,
+        holding_cost_percent: editParams.holding_cost_percent,
       };
 
       const res = await fetch('/api/reorder-params', {
@@ -478,14 +556,18 @@ export default function ReorderPage() {
                 <p className="text-gray-600 text-xs">
                   ระดับสต็อกที่ควรสั่งซื้อเพิ่ม เพื่อไม่ให้สินค้าหมดก่อนของถึง
                 </p>
-                <div className="bg-white rounded px-3 py-2 font-mono text-sm text-gray-800">
-                  ROP = (ความต้องการต่อวัน × ระยะเวลานำเข้าสินค้า) + สต็อกความปลอดภัย
+                <div className="bg-white rounded px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-gray-800">
+                  ROP = (ยอดขายเฉลี่ยต่อวัน × ระยะนำส่งเฉลี่ย) + สต็อกความปลอดภัย
                 </div>
-                <ul className="text-xs text-gray-600 space-y-1">
-                  <li>• <strong>ความต้องการต่อวัน</strong> — ยอดขายเฉลี่ยต่อวัน (หน่วย)</li>
-                  <li>• <strong>ระยะเวลานำเข้าสินค้า</strong> — จำนวนวันจากสั่งซื้อจนถึงของถึงคลัง</li>
-                  <li>• <strong>สต็อกความปลอดภัย</strong> — จำนวนสำรองเพื่อป้องกันสินค้าหมด</li>
-                </ul>
+                <p className="text-xs text-gray-600">
+                  ยอดขายเฉลี่ย/สูงสุดต่อวันคำนวณจากออเดอร์จริงย้อนหลัง 90 วัน (ต่อคลัง) ระยะนำส่งเฉลี่ยและสูงสุดกรอกในตั้งค่ารายการ
+                </p>
+                <div className="bg-white rounded px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-gray-800">
+                  สต็อกความปลอดภัย = (ยอดขายสูงสุดต่อวัน × ระยะนำส่งสูงสุด) − (ยอดขายเฉลี่ยต่อวัน × ระยะนำส่งเฉลี่ย)
+                </div>
+                <p className="text-xs text-amber-800/90">
+                  สินค้าใหม่หรือไม่มียอดขายในช่วงดังกล่าว — แนะนำกรอกสต็อกความปลอดภัยเอง (ไม่ใช้สูตรอัตโนมัติ)
+                </p>
               </div>
 
               {/* EOQ */}
@@ -498,7 +580,7 @@ export default function ReorderPage() {
                   EOQ = √(2 × D × S ÷ H)
                 </div>
                 <ul className="text-xs text-gray-600 space-y-1">
-                  <li>• <strong>D</strong> — ความต้องการต่อปี (หน่วย)</li>
+                  <li>• <strong>D</strong> — ความต้องการต่อปี (หน่วย) = ยอดขายเฉลี่ยต่อวัน × 365</li>
                   <li>• <strong>S</strong> — ค่าคำสั่งซื้อต่อครั้ง (บาท)</li>
                   <li>• <strong>H</strong> — ค่าเก็บรักษาต่อหน่วยต่อปี (บาท)</li>
                 </ul>

@@ -161,9 +161,12 @@ export default function UserPermissionsPage() {
     }
   };
 
+  const isAdminViewer = currentUser?.role === 'admin';
+  const isManagerViewer = currentUser?.role === 'manager';
+
   // Fetch users from API
   const fetchUsers = async () => {
-    if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'manager')) {
+    if (!currentUser || (!isAdminViewer && !isManagerViewer)) {
       return;
     }
 
@@ -206,6 +209,13 @@ export default function UserPermissionsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, selectedRole, currentUser]);
+
+  // Managers never use ADMIN filter (no admin rows exist for them)
+  useEffect(() => {
+    if (currentUser?.role === 'manager' && selectedRole === 'ADMIN') {
+      setSelectedRole('all');
+    }
+  }, [currentUser?.role, selectedRole]);
 
   // Filter users (client-side filtering for pagination)
   const filteredUsers = users.filter((user) => {
@@ -267,7 +277,7 @@ export default function UserPermissionsPage() {
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
-          role: formData.role,
+          role: currentUser?.role === 'manager' ? 'STAFF' : formData.role,
           password: formData.password,
         }),
       });
@@ -312,8 +322,8 @@ export default function UserPermissionsPage() {
         status: selectedUser.status,
       };
 
-      // Only include role if not editing own account
-      if (!isOwnAccount) {
+      // Only include role if not editing own account (admins only; managers cannot change roles)
+      if (!isOwnAccount && currentUser?.role === 'admin') {
         updateData.role = formData.role;
       }
 
@@ -447,8 +457,14 @@ export default function UserPermissionsPage() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
         {/* Role Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {roleInfo.map((role) => {
+        <div
+          className={`grid grid-cols-1 gap-4 mb-6 ${
+            isManagerViewer ? 'md:grid-cols-2' : 'md:grid-cols-3'
+          }`}
+        >
+          {roleInfo
+            .filter((role) => (isManagerViewer ? role.role !== 'ADMIN' : true))
+            .map((role) => {
             const count = roleStats[role.role.toLowerCase()] || 0;
             return (
               <Card key={role.role}>
@@ -514,7 +530,7 @@ export default function UserPermissionsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">ทุกบทบาท</SelectItem>
-                    <SelectItem value="ADMIN">ADMIN</SelectItem>
+                    {isAdminViewer && <SelectItem value="ADMIN">ADMIN</SelectItem>}
                     <SelectItem value="MANAGER">MANAGER</SelectItem>
                     <SelectItem value="STAFF">STAFF</SelectItem>
                   </SelectContent>
@@ -523,13 +539,13 @@ export default function UserPermissionsPage() {
                   <Upload className="w-4 h-4 mr-2" />
                   ส่งออกข้อมูล
                 </Button>
-                {currentUser?.role === 'admin' && (
+                {(isAdminViewer || isManagerViewer) && (
                   <Button
                     className="bg-pink-600 hover:bg-pink-700 text-white h-9 px-3 text-xs"
                     onClick={handleCreateUser}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    สร้างผู้ใช้งานใหม่
+                    {isManagerViewer ? 'เพิ่มพนักงาน' : 'สร้างผู้ใช้งานใหม่'}
                   </Button>
                 )}
               </div>
@@ -586,7 +602,7 @@ export default function UserPermissionsPage() {
                                   <Eye className="w-3 h-3 mr-1" />
                                   ดูรายละเอียด
                                 </Button>
-                                {currentUser?.role === 'admin' && (
+                                {isAdminViewer && (
                                   <>
                                     <Button 
                                       variant="outline" 
@@ -605,6 +621,17 @@ export default function UserPermissionsPage() {
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                   </>
+                                )}
+                                {isManagerViewer &&
+                                  (user.role === 'STAFF' || user.id === currentUser?.id) && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="h-7 w-7 p-0"
+                                    onClick={() => handleEditUser(user)}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
                                 )}
                               </div>
                             </TD>
@@ -704,16 +731,27 @@ export default function UserPermissionsPage() {
           </div>
           <div>
             <Label htmlFor="role" className="text-sm font-semibold">บทบาท</Label>
-            <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}>
-              <SelectTrigger className="text-sm h-9">
+            <Select
+              value={isManagerViewer ? 'STAFF' : formData.role}
+              onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}
+              disabled={isManagerViewer}
+            >
+              <SelectTrigger className="text-sm h-9" disabled={isManagerViewer}>
                 <SelectValue placeholder="เลือกบทบาท" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ADMIN">ADMIN</SelectItem>
-                <SelectItem value="MANAGER">MANAGER</SelectItem>
+                {isAdminViewer && (
+                  <>
+                    <SelectItem value="ADMIN">ADMIN</SelectItem>
+                    <SelectItem value="MANAGER">MANAGER</SelectItem>
+                  </>
+                )}
                 <SelectItem value="STAFF">STAFF</SelectItem>
               </SelectContent>
             </Select>
+            {isManagerViewer && (
+              <p className="text-xs text-gray-500 mt-1"></p>
+            )}
           </div>
           <div>
             <Label htmlFor="password" className="text-sm font-semibold">รหัสผ่าน</Label>
@@ -781,9 +819,9 @@ export default function UserPermissionsPage() {
               <Select 
                 value={formData.role} 
                 onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}
-                disabled={currentUser?.id === selectedUser.id}
+                disabled={currentUser?.id === selectedUser.id || isManagerViewer}
               >
-                <SelectTrigger className="text-sm h-9" disabled={currentUser?.id === selectedUser.id}>
+                <SelectTrigger className="text-sm h-9" disabled={currentUser?.id === selectedUser.id || isManagerViewer}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -795,18 +833,27 @@ export default function UserPermissionsPage() {
               {currentUser?.id === selectedUser.id && (
                 <p className="text-xs text-gray-500 mt-1">ไม่สามารถแก้ไขบทบาทของตัวเองได้</p>
               )}
+              {isManagerViewer &&
+                selectedUser?.role === 'STAFF' &&
+                selectedUser.id !== currentUser?.id && (
+                <p className="text-xs text-gray-500 mt-1">ผู้จัดการแก้ไขบัญชี STAFF ได้ แต่ไม่สามารถเปลี่ยนบทบาทได้</p>
+              )}
             </div>
             <div>
               <Label htmlFor="edit-status" className="text-sm font-semibold">สถานะ</Label>
               <Select 
                 value={selectedUser.status} 
-onValueChange={(value: string) => {
+                onValueChange={(value: string) => {
                     if (selectedUser) {
                       setSelectedUser({ ...selectedUser, status: value as 'active' | 'inactive' });
                     }
                   }}
+                disabled={isManagerViewer && currentUser?.id === selectedUser.id}
               >
-                <SelectTrigger className="text-sm h-9">
+                <SelectTrigger
+                  className="text-sm h-9"
+                  disabled={isManagerViewer && currentUser?.id === selectedUser.id}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -814,6 +861,11 @@ onValueChange={(value: string) => {
                   <SelectItem value="inactive">พักการใช้งาน</SelectItem>
                 </SelectContent>
               </Select>
+              {isManagerViewer && currentUser?.id === selectedUser.id && (
+                <p className="text-xs text-gray-500 mt-1">
+                  ไม่สามารถปิดการใช้งานบัญชีของตัวเองได้
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="edit-password" className="text-sm font-semibold">รหัสผ่านใหม่ (เว้นว่างไว้หากไม่ต้องการเปลี่ยน)</Label>

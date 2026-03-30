@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../database/connection';
 import { getCurrentUser } from '@/lib/auth';
+import { forbidStaffApi } from '@/lib/staff-api-guard';
 import { logStaffActivity } from '@/database/activity-log';
 
 type DbDiscount = {
@@ -15,16 +16,23 @@ type DbDiscount = {
   usage_limit: number | null;
   used_count: number;
   is_active: boolean;
+  product_id: number | null;
+  variant_id: number | null;
   created_date: string;
 };
 
 export async function GET(req: NextRequest) {
   try {
+    const denied = await forbidStaffApi();
+    if (denied) return denied;
+
     const { searchParams } = new URL(req.url);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 50)));
     const offset = Math.max(0, Number(searchParams.get('offset') || 0));
     const search = searchParams.get('search');
     const is_active = searchParams.get('is_active');
+    const productId = searchParams.get('product_id');
+    const variantId = searchParams.get('variant_id');
 
     const params: (string | number | boolean)[] = [];
     const conditions: string[] = [];
@@ -37,6 +45,22 @@ export async function GET(req: NextRequest) {
     if (is_active === 'true' || is_active === 'false') {
       conditions.push(`d.isactive = $${params.length + 1}`);
       params.push(is_active === 'true');
+    }
+
+    if (productId) {
+      const n = Number(productId);
+      if (!Number.isNaN(n)) {
+        conditions.push(`d.productid = $${params.length + 1}`);
+        params.push(n);
+      }
+    }
+
+    if (variantId) {
+      const n = Number(variantId);
+      if (!Number.isNaN(n)) {
+        conditions.push(`d.variantid = $${params.length + 1}`);
+        params.push(n);
+      }
     }
 
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -55,6 +79,8 @@ export async function GET(req: NextRequest) {
         d.usagelimit as usage_limit,
         d.usedcount as used_count,
         d.isactive as is_active,
+        d.productid as product_id,
+        d.variantid as variant_id,
         d.createddate as created_date
       FROM discounts d
       ${whereSql}
@@ -84,6 +110,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await forbidStaffApi();
+    if (denied) return denied;
+
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json(
@@ -103,6 +132,8 @@ export async function POST(req: NextRequest) {
       end_date,
       usage_limit,
       is_active = true,
+      product_id,
+      variant_id,
     } = body;
 
     if (!discount_code || !discount_type || !discount_value || !start_date || !end_date) {
@@ -133,12 +164,51 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let coercedProductId: number | null = null;
+    if (product_id !== undefined && product_id !== null && product_id !== '') {
+      const n = Number(product_id);
+      if (Number.isNaN(n) || n <= 0) {
+        return NextResponse.json({ ok: false, error: 'product_id ไม่ถูกต้อง' }, { status: 400 });
+      }
+      coercedProductId = n;
+    }
+
+    let coercedVariantId: number | null = null;
+    if (variant_id !== undefined && variant_id !== null && variant_id !== '') {
+      const n = Number(variant_id);
+      if (Number.isNaN(n) || n <= 0) {
+        return NextResponse.json({ ok: false, error: 'variant_id ไม่ถูกต้อง' }, { status: 400 });
+      }
+      coercedVariantId = n;
+    }
+
+    if (coercedVariantId != null) {
+      const vRes = await query(
+        `SELECT productid FROM productvariants WHERE variantid = $1`,
+        [coercedVariantId]
+      );
+      const variantRow = vRes.rows?.[0] as { productid?: number } | undefined;
+      const variantProductId = variantRow?.productid ?? null;
+      if (variantProductId == null) {
+        return NextResponse.json({ ok: false, error: 'ไม่พบ variant_id นี้ในระบบ' }, { status: 400 });
+      }
+      if (coercedProductId == null) {
+        coercedProductId = Number(variantProductId);
+      } else if (Number(variantProductId) !== coercedProductId) {
+        return NextResponse.json(
+          { ok: false, error: 'variant_id ไม่สอดคล้องกับ product_id ที่เลือก' },
+          { status: 400 }
+        );
+      }
+    }
+
     const res = await query(
       `INSERT INTO discounts (
         discountcode, discounttype, discountvalue,
         minimumorderamount, maximumdiscountamount,
-        startdate, enddate, usagelimit, isactive
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        startdate, enddate, usagelimit, isactive,
+        productid, variantid
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING discountid as discount_id`,
       [
         String(discount_code).trim().toUpperCase(),
@@ -150,6 +220,8 @@ export async function POST(req: NextRequest) {
         end_date,
         usage_limit != null ? Number(usage_limit) : null,
         Boolean(is_active),
+        coercedProductId,
+        coercedVariantId,
       ]
     );
 
@@ -172,6 +244,8 @@ export async function POST(req: NextRequest) {
         end_date,
         usage_limit: usage_limit != null ? Number(usage_limit) : null,
         is_active: Boolean(is_active),
+        product_id: coercedProductId,
+        variant_id: coercedVariantId,
       },
     });
 
@@ -191,6 +265,9 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const denied = await forbidStaffApi();
+    if (denied) return denied;
+
     const body = await req.json();
     const {
       discount_id,
@@ -203,6 +280,8 @@ export async function PUT(req: NextRequest) {
       end_date,
       usage_limit,
       is_active,
+      product_id,
+      variant_id,
     } = body;
 
     if (!discount_id) {
@@ -265,6 +344,68 @@ export async function PUT(req: NextRequest) {
       params.push(Boolean(is_active));
     }
 
+    let coercedProductId: number | null | undefined = undefined;
+    if (product_id !== undefined) {
+      if (product_id === null || product_id === '') coercedProductId = null;
+      else {
+        const n = Number(product_id);
+        if (Number.isNaN(n) || n <= 0) {
+          return NextResponse.json({ ok: false, error: 'product_id ไม่ถูกต้อง' }, { status: 400 });
+        }
+        coercedProductId = n;
+      }
+    }
+
+    let coercedVariantId: number | null | undefined = undefined;
+    if (variant_id !== undefined) {
+      if (variant_id === null || variant_id === '') coercedVariantId = null;
+      else {
+        const n = Number(variant_id);
+        if (Number.isNaN(n) || n <= 0) {
+          return NextResponse.json({ ok: false, error: 'variant_id ไม่ถูกต้อง' }, { status: 400 });
+        }
+        coercedVariantId = n;
+      }
+    }
+
+    if (coercedVariantId !== undefined && coercedVariantId != null) {
+      const vRes = await query(
+        `SELECT productid FROM productvariants WHERE variantid = $1`,
+        [coercedVariantId]
+      );
+      const variantRow = vRes.rows?.[0] as { productid?: number } | undefined;
+      const variantProductId = variantRow?.productid ?? null;
+      if (variantProductId == null) {
+        return NextResponse.json({ ok: false, error: 'ไม่พบ variant_id นี้ในระบบ' }, { status: 400 });
+      }
+
+      // If product_id is being explicitly set, validate it matches; else leave to DB/API consumer
+      if (coercedProductId !== undefined) {
+        if (coercedProductId == null) {
+          // variant set but product cleared -> invalid
+          return NextResponse.json(
+            { ok: false, error: 'หากระบุ variant_id ต้องระบุ product_id ด้วย' },
+            { status: 400 }
+          );
+        }
+        if (Number(variantProductId) !== coercedProductId) {
+          return NextResponse.json(
+            { ok: false, error: 'variant_id ไม่สอดคล้องกับ product_id ที่เลือก' },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    if (coercedProductId !== undefined) {
+      updates.push(`productid = $${idx++}`);
+      params.push(coercedProductId);
+    }
+    if (coercedVariantId !== undefined) {
+      updates.push(`variantid = $${idx++}`);
+      params.push(coercedVariantId);
+    }
+
     if (updates.length === 0) {
       return NextResponse.json({ ok: false, error: 'ไม่มีข้อมูลที่จะอัปเดต' }, { status: 400 });
     }
@@ -289,6 +430,9 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const denied = await forbidStaffApi();
+    if (denied) return denied;
+
     const { searchParams } = new URL(req.url);
     const discountId = searchParams.get('id');
 

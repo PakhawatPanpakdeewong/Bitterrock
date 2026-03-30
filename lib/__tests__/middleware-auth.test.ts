@@ -2,7 +2,7 @@
  * Unit tests for lib/middleware-auth.ts - หน้าที่เกี่ยวข้อง: Middleware (ทุกหน้าที่ต้อง login)
  * Report: report_middleware-auth_middleware.md
  */
-import { getMiddlewareAction } from '../middleware-auth';
+import { getMiddlewareAction, isStaffRestrictedPath } from '../middleware-auth';
 
 describe('getMiddlewareAction', () => {
   it('redirects to / when on /login with session and userId', () => {
@@ -45,5 +45,20 @@ describe('getMiddlewareAction', () => {
     expect(getMiddlewareAction('/login/forgot', false, false)).toEqual({
       type: 'next',
     });
+  });
+});
+
+describe('isStaffRestrictedPath', () => {
+  it('matches promotions and nested paths', () => {
+    expect(isStaffRestrictedPath('/promotions')).toBe(true);
+    expect(isStaffRestrictedPath('/promotions/foo')).toBe(true);
+    expect(isStaffRestrictedPath('/warehouse-stock')).toBe(true);
+    expect(isStaffRestrictedPath('/fetch-logs')).toBe(true);
+  });
+
+  it('returns false for unrelated paths', () => {
+    expect(isStaffRestrictedPath('/')).toBe(false);
+    expect(isStaffRestrictedPath('/orders')).toBe(false);
+    expect(isStaffRestrictedPath('/inventory')).toBe(false);
   });
 });
